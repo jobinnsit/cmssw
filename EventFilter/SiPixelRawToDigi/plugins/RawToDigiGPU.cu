@@ -85,7 +85,7 @@ void initDeviceMemory() {
   // host memory only be used in CPE
   adc_h  = (uint*)malloc(MAX_WORD_SIZE);
   word_h = (uint*)malloc(MAX_WORD_SIZE);
-  fedIndex_h = (uint*)malloc((MAX_FED+1)*sizeof(uint)); // +1 for last fed index
+  fedIndex_h = (uint*)malloc(2*(MAX_FED+1)*sizeof(uint)); // +1 for last fed index
   xx     =   (uint*)malloc(MAX_WORD_SIZE);
   yy     =   (uint*)malloc(MAX_WORD_SIZE);
   RawId  =   (uint*)malloc(MAX_WORD_SIZE);
@@ -95,7 +95,7 @@ void initDeviceMemory() {
   mIndexEnd = (int*)malloc(mSize);
  
   cudaMalloc((void**)&word_d,       MAX_WORD_SIZE);
-  cudaMalloc((void**)&fedIndex_d,   (MAX_FED+1)*sizeof(uint));
+  cudaMalloc((void**)&fedIndex_d,   2*(MAX_FED+1)*sizeof(uint));
   cudaMalloc((void**)&xx_d,         MAX_WORD_SIZE); // to store the x and y coordinate
   cudaMalloc((void**)&yy_d,         MAX_WORD_SIZE);
   cudaMalloc((void**)&xx_adc,         MAX_WORD_SIZE); // to store the x and y coordinate
@@ -169,14 +169,32 @@ __device__ DetIdGPU getRawId(const CablingMap *Map, uint fed, uint link, uint ro
   DetIdGPU detId = {Map->RawId[index], Map->rocInDet[index], Map->moduleId[index]};
   return detId;  
 }
+
+//reference http://cmsdoxygen.web.cern.ch/cmsdoxygen/CMSSW_9_2_0/doc/html/dd/d31/FrameConversion_8cc_source.html
+//http://cmslxr.fnal.gov/source/CondFormats/SiPixelObjects/src/PixelROC.cc?v=CMSSW_9_2_0#0071
 // Convert local pixel to global pixel
-__device__ Pixel frameConversion(bool bpix, int side, uint rocIdInDetUnit, Pixel local) {
+__device__ Pixel frameConversion(bool bpix, int side, uint layer,uint rocIdInDetUnit, Pixel local) {
   
   int slopeRow  = 0,  slopeCol = 0;
   int rowOffset = 0, colOffset = 0;
 
   if(bpix) {
-    if(side==1) {
+    
+    if(side==-1 && layer!=1) { // -Z side: 4 non-flipped modules oriented like 'dddd', except Layer 1
+      if (rocIdInDetUnit <8) {
+        slopeRow = 1;     
+        slopeCol = -1;
+        rowOffset = 0;
+        colOffset = (8-rocIdInDetUnit)*numColsInRoc-1;
+      }
+      else {
+        slopeRow  = -1;
+        slopeCol  = 1;
+        rowOffset = 2*numRowsInRoc-1;
+        colOffset = (rocIdInDetUnit-8)*numColsInRoc;
+      } // if roc
+    }
+    else { // +Z side: 4 non-flipped modules oriented like 'pppp', but all 8 in layer1
       if(rocIdInDetUnit <8) {
         slopeRow  = -1;
         slopeCol  =  1;
@@ -190,19 +208,7 @@ __device__ Pixel frameConversion(bool bpix, int side, uint rocIdInDetUnit, Pixel
         colOffset = (16-rocIdInDetUnit)*numColsInRoc-1;
       }
     }
-    else {
-      if (rocIdInDetUnit <8) {
-        slopeRow = 1;     slopeCol = -1;
-        rowOffset = 0;
-        colOffset = (8-rocIdInDetUnit)*numColsInRoc-1;
-      }
-      else {
-        slopeRow  = -1;
-        slopeCol  = 1;
-        rowOffset = 2*numRowsInRoc-1;
-        colOffset = (rocIdInDetUnit-8)*numColsInRoc;
-      } // if roc
-    }
+
   }
   else { // fpix
     if(side==-1) { // pannel 1
@@ -293,14 +299,16 @@ __global__ void applyADCthreshold_kernel
 // Kernel to perform Raw to Digi conversion
 __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const uint *fedIndex, 
                                  uint *XX, uint *YY, uint *RawId, uint *moduleId, 
-                                 int *mIndexStart, int *mIndexEnd, uint *ADC, uint *layerArr ) 
+                                 int *mIndexStart, int *mIndexEnd, uint *ADC, uint *layerArr,
+                                 uint *fedIdArr ) 
 {
   //printf("Inside GPU: \n");
-  int fedId    = blockIdx.x;
+  int blockId = blockIdx.x;
+  int fedId    = fedIndex[blockId];
   int threadId = threadIdx.x;
-
-  int begin  = fedIndex[fedId];
-  int end    = fedIndex[fedId+1];
+  //if(threadIdx.x==0) printf("fedId: %d\n",fedId);
+  int begin  = fedIndex[MAX_FED+blockId];
+  int end    = fedIndex[MAX_FED+blockId+1];
  
   int no_itr = (end - begin)/ blockDim.x + 1; // to deal with number of hits greater than blockDim.x 
   #pragma unroll
@@ -316,7 +324,7 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
         ADC[gIndex]   = 0; 
         moduleId[gIndex] = 9999; //9999 is the indication of bad module, taken care later  
         layerArr[gIndex] = 0;
-        //fedIdArr[gIndex] = fedId; // used for testing
+        fedIdArr[gIndex] = fedId; // used for testing
         continue ;         // 0: bad word, 
       } 
       uint link  = getLink(ww);            // Extract link
@@ -324,18 +332,20 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
       DetIdGPU detId = getRawId(Map, fedId, link, roc);
       uint rawId  = detId.RawId;
       uint rocIdInDetUnit = detId.rocInDet;
-
+      //if(fedId==48) {
+        //printf("fedId: %d  link: %d  roc: %d  rawId: %u  rocInDU: %d\n",fedId+1200,link,roc,rawId, rocIdInDetUnit);
+      //}
       bool barrel = isBarrel(rawId);
   
       //printf("ww: %u    link:  %u  roc: %u   rawId: %u\n", ww, link, roc, rawId);
       //printf("from CablingMap  rocInDU: %u  moduleId: %u", rocIdInDetUnit, detId.moduleId);
       //printf("barrel: %d\n", barrel);
-      uint layer =0, ladder =0;
-      int side =0, panel =0, disk =0, blade =0, module=0;
+      uint layer =0;//, ladder =0;
+      int side =0, panel =0, blade =0, module=0;//disk =0,
     
       if(barrel) {
         layer  = (rawId >> layerStartBit_)  & layerMask_;
-        ladder = (rawId >> ladderStartBit_) & ladderMask_;
+        //ladder = (rawId >> ladderStartBit_) & ladderMask_;
         module = (rawId >> moduleStartBit_) & moduleMask_;
         side   = (module<5)? -1:1;
      
@@ -344,7 +354,7 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
         // endcap ids
         layer = 0;
         panel = (rawId >> panelStartBit_) & panelMask_;
-        disk  = (rawId >> diskStartBit_)  & diskMask_ ;
+        //disk  = (rawId >> diskStartBit_)  & diskMask_ ;
         side  = (panel==1)? -1:1;
         //blade = (rawId>>bladeStartBit_) & bladeMask_;
       }
@@ -367,14 +377,15 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
         localPix.row = row;
         localPix.col = col;
       }
-
-      Pixel globalPix = frameConversion(barrel, side, rocIdInDetUnit, localPix);
+      //if(fedId==48)
+        //printf("%14u%6d%6d%6d\n",ww,localPix.row,localPix.col, getADC(ww));
+      Pixel globalPix = frameConversion(barrel, side, layer,rocIdInDetUnit, localPix);
       XX[gIndex]    = globalPix.row +1 ; // origin shifting by 1 0-159
       YY[gIndex]    = globalPix.col +1 ; // origin shifting by 1 0-415
       ADC[gIndex]   = getADC(ww);
       RawId[gIndex] = detId.RawId; // only for testing
       layerArr[gIndex] = layer;
-      //fedIdArr[gIndex] = fedId;     // used for testing
+      fedIdArr[gIndex] = fedId;     // used for testing
       // only for testing purpose: White box testing
       //XX[gIndex] = fedId; // fedId for pattern
       //YY[gIndex] = gIndex; // wwIndex for pattern
@@ -463,13 +474,13 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
 } // end of Raw to Digi kernel
 
 // kernel wrapper called from runRawToDigi_kernel
-void RawToDigi_kernel_wrapper(const uint wordCounter,uint *word, uint *fedIndex) { 
+void RawToDigi_kernel_wrapper(const uint wordCounter,uint *word,const uint fedCounter, uint *fedIndex) { 
   
  
   cout<<"Inside RawToDigi , total words: "<<wordCounter<<endl;
-  int nBlocks = MAX_FED; // = MAX_FED
+  int nBlocks = fedCounter; // = MAX_FED
   int threads = 512; //
-  fedIndex[nBlocks] = wordCounter;
+  fedIndex[MAX_FED+nBlocks] = wordCounter;
   // for debugging 
   uint *fedId;
   int mSize = totalModule*sizeof(int);
@@ -480,12 +491,12 @@ void RawToDigi_kernel_wrapper(const uint wordCounter,uint *word, uint *fedIndex)
     cudaMemset(mIndexStart_d, -1, mSize);
     cudaMemset(mIndexEnd_d, -1, mSize);
     cudaMemcpy(word_d, word, eventSize, cudaMemcpyHostToDevice);
-    cudaMemcpy(fedIndex_d, fedIndex, (MAX_FED+1)*sizeof(uint), cudaMemcpyHostToDevice); 
+    cudaMemcpy(fedIndex_d, fedIndex, 2*(MAX_FED+1)*sizeof(uint), cudaMemcpyHostToDevice); 
     // for debugging 
     cudaMallocManaged((void**)&fedId, eventSize);
     // Launch rawToDigi kernel
     RawToDigi_kernel<<<nBlocks,threads>>>(Map,word_d, fedIndex_d, xx_d, yy_d, RawId_d,
-                                          moduleId_d, mIndexStart_d, mIndexEnd_d, adc_d, layer_d);
+                                          moduleId_d, mIndexStart_d, mIndexEnd_d, adc_d, layer_d,fedId);
     cudaDeviceSynchronize();
 
     cudaMemcpy(yy  , yy_d,    eventSize,    cudaMemcpyDeviceToHost);
@@ -494,7 +505,7 @@ void RawToDigi_kernel_wrapper(const uint wordCounter,uint *word, uint *fedIndex)
     cudaMemcpy(xx,    xx_d,   eventSize, cudaMemcpyDeviceToHost);
     cudaMemcpy(mIndexStart, mIndexStart_d, mSize, cudaMemcpyDeviceToHost);
     cudaMemcpy(mIndexEnd,   mIndexEnd_d,   mSize, cudaMemcpyDeviceToHost);
-    cudaMemcpy(word, layer_d, eventSize, cudaMemcpyDeviceToHost);
+    cudaMemcpy(word, RawId_d, eventSize, cudaMemcpyDeviceToHost);
 
      // apply the correction to the moduleStart & moduleEnd
      // if module contains only one pixel then either moduleStart 
@@ -521,16 +532,20 @@ void RawToDigi_kernel_wrapper(const uint wordCounter,uint *word, uint *fedIndex)
     cudaMemcpy(mIndexEnd_d,   mIndexEnd,   mSize, cudaMemcpyHostToDevice);
     
   }
-  //static int eventno = 0;
-  //ofstream outFile;
-  //outFile.open("fedId_moduleId_afterBugFix.txt", ios::out | ios::app);  
-  //for(uint i=0; i<wordCounter;i++) {
+  static int eventno = 0;
+  ofstream outFile;
+  outFile.open("R2D_GPU.txt", ios::out | ios::app);
+  outFile<<"fedId\t"<<"RawId\t"<<"xx\t"<<"yy\t"<<"adc"<<endl;  
+  uint x=0, y=0;
+  for(uint i=0; i<wordCounter;i++) {
     //if(RawId[i]!=0)
     //outFile <<setw(6)<<moduleId[i]+1200<<setw(14)<<word[i]<<setw(6)<<xx[i]<<setw(6)<<yy[i]<<setw(6)<<adc_h[i]<<endl;
-    //outFile<<setw(4)<<word[i]<<setw(8)<<moduleId[i]<<setw(4)<<xx[i]<<setw(4)<<yy[i]<<endl;
+  x=xx[i]; y=yy[i];
+  if(x>0) {x=x-1; y=y-1;} // origin was shifted in RawToDigi kernel for cluster
+    outFile<<setw(6)<<fedId[i]+1200<<setw(14)<<word[i]<<setw(6)<<x<<setw(6)<<y<<setw(6)<<adc_h[i]<<endl;
      //cout<<"ww: "<<setw(10)<<RawId[i]<<"  xx: "<<setw(3)<<xx[i]<<"  yy: "<<setw(3)<<yy[i]<<endl;
-  //}
-  //outFile.close();
+  }
+  outFile.close();
   cudaFree(fedId);
   //cout<<"RawToDigi Kernel executed successfully!\n";
   

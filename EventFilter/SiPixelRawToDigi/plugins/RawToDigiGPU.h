@@ -35,7 +35,7 @@ const uint numColsInRoc = 52;
 
 // Maximum fed for phase1 is 150 but not all of them are filled
 // Update the number FED based on maximum fed found in the cabling map
- const uint MAX_FED  = 139;  
+ const uint MAX_FED  = 150;  
  const uint MAX_LINK = 48; //maximum links/channels for phase1 
  const uint MAX_ROC  = 8;
  const uint MAX_WORD = 4096;//500; 

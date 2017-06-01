@@ -5,8 +5,6 @@
 // 20-10-2010 Andrew York (Tennessee)
 // Jan 2016 Tamas Almos Vami (Tav) (Wigner RCP) -- Cabling Map label option
 
-#include "SiPixelRawToDigi.h"
-
 #include "DataFormats/Common/interface/Handle.h"
 #include "FWCore/Framework/interface/ESHandle.h"
 #include "FWCore/Framework/interface/ESTransientHandle.h"
@@ -34,11 +32,26 @@
 #include "EventFilter/SiPixelRawToDigi/interface/PixelUnpackingRegions.h"
 #include "FWCore/Framework/interface/ConsumesCollector.h"
 
+#include "FWCore/PluginManager/interface/ModuleDef.h"
+#include "FWCore/Framework/interface/MakerMacros.h"
+
 #include "TH1D.h"
 #include "TFile.h"
+#include "SiPixelRawToDigi.h"
+#include <string>
+#include <chrono>
+#include <iostream>
+#include <fstream>
+// for GPU
+// device memory intialization for RawTodigi
+#include "RawToDigiCPUGPU.h"
+// device memory initialization for CPE
+//#include "CPEGPUMem.h"
 
 using namespace std;
-
+// wrapper function to call RawToDigi on the GPU
+void RawToDigi_kernel_wrapper (const unsigned int wordCounterGPU,
+     unsigned int *word,const unsigned int fedCounter,unsigned int *fedIndex);
 // -----------------------------------------------------------------------------
 SiPixelRawToDigi::SiPixelRawToDigi( const edm::ParameterSet& conf ) 
   : config_(conf), 
@@ -100,7 +113,16 @@ SiPixelRawToDigi::SiPixelRawToDigi( const edm::ParameterSet& conf )
   }
   //CablingMap could have a label //Tav
   cablingMapLabel = config_.getParameter<std::string> ("CablingMapLabel");
-
+  
+  //GPU specific
+  const int MAX_FED  = 150;
+  const int MAX_WORD = 4096;
+  word = (unsigned int*)malloc(MAX_FED*MAX_WORD*sizeof(unsigned int));
+  fedIndex =(unsigned int*)malloc(2*(MAX_FED+1)*sizeof(unsigned int));
+  // allocate memory for RawToDigi on GPU
+  initDeviceMemory();
+  // allocate memory for CPE on GPU
+  //initDeviceMemCPE();
 }
 
 
@@ -115,7 +137,12 @@ SiPixelRawToDigi::~SiPixelRawToDigi() {
     hCPU->Write();
     hDigi->Write();
   }
-
+  free(word);
+  free(fedIndex);
+  // free device memory used for RawToDigi on GPU
+  freeMemory(); 
+  // free device memory used for CPE on GPU
+  //freeDeviceMemCPE();
 }
 
 void
@@ -209,10 +236,19 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
     LogDebug("SiPixelRawToDigi") << "region2unpack #feds: "<<regions_->nFEDs();
     LogDebug("SiPixelRawToDigi") << "region2unpack #modules (BPIX,EPIX,total): "<<regions_->nBarrelModules()<<" "<<regions_->nForwardModules()<<" "<<regions_->nModules();
   }
-
+  //GPU specific 
+  unsigned int wordCounterGPU =0;
+  unsigned int fedCounter =0;
+  const unsigned int MAX_FED = 150;
   for (auto aFed = fedIds.begin(); aFed != fedIds.end(); ++aFed) {
     int fedId = *aFed;
-
+    //cout<<"FedId: "<<fedId<<endl;
+    // for GPU
+    // first 150 index stores the fedId and next 150 will store the
+    // start index of word in that fed
+    fedIndex[fedCounter] = fedId-1200;
+    fedIndex[MAX_FED + fedCounter] = wordCounterGPU; // MAX_FED = 150
+    fedCounter++;
     if(!usePilotBlade && (fedId==40) ) continue; // skip pilot blade data
 
     if (regions_ && !regions_->mayUnpackFED(fedId)) continue;
@@ -223,48 +259,50 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
 
     //get event data for this fed
     const FEDRawData& fedRawData = buffers->FEDData( fedId );
-
+    //GPU specific
+    
     //convert data to digi and strip off errors
-    formatter.interpretRawData( errorsInEvent, fedId, fedRawData, *collection, errors);
+    formatter.interpretRawData( errorsInEvent, fedId, fedRawData, *collection, errors,word, wordCounterGPU);
 
     //pack errors into collection
     if(includeErrors) {
       typedef PixelDataFormatter::Errors::iterator IE;
       for (IE is = errors.begin(); is != errors.end(); is++) {
-	uint32_t errordetid = is->first;
-	if (errordetid==dummydetid) {           // errors given dummy detId must be sorted by Fed
-	  nodeterrors.insert( nodeterrors.end(), errors[errordetid].begin(), errors[errordetid].end() );
-	} else {
-	  edm::DetSet<SiPixelRawDataError>& errorDetSet = errorcollection->find_or_insert(errordetid);
-	  errorDetSet.data.insert(errorDetSet.data.end(), is->second.begin(), is->second.end());
-	  // Fill detid of the detectors where there is error AND the error number is listed
-	  // in the configurable error list in the job option cfi.
-	  // Code needs to be here, because there can be a set of errors for each 
-	  // entry in the for loop over PixelDataFormatter::Errors
-	  if(!tkerrorlist.empty() || !usererrorlist.empty()){
-	    DetId errorDetId(errordetid);
-	    edm::DetSet<SiPixelRawDataError>::const_iterator itPixelError=errorDetSet.begin();
+        uint32_t errordetid = is->first;
+        if (errordetid==dummydetid) {           // errors given dummy detId must be sorted by Fed
+          nodeterrors.insert( nodeterrors.end(), errors[errordetid].begin(), errors[errordetid].end() );
+        } 
+        else {
+          edm::DetSet<SiPixelRawDataError>& errorDetSet = errorcollection->find_or_insert(errordetid);
+          errorDetSet.data.insert(errorDetSet.data.end(), is->second.begin(), is->second.end());
+          // Fill detid of the detectors where there is error AND the error number is listed
+          // in the configurable error list in the job option cfi.
+          // Code needs to be here, because there can be a set of errors for each 
+          // entry in the for loop over PixelDataFormatter::Errors
+          if(!tkerrorlist.empty() || !usererrorlist.empty()){
+            DetId errorDetId(errordetid);
+            edm::DetSet<SiPixelRawDataError>::const_iterator itPixelError=errorDetSet.begin();
             for(; itPixelError!=errorDetSet.end(); ++itPixelError){
               // fill list of detIds to be turned off by tracking
               if(!tkerrorlist.empty()) {
-	        std::vector<int>::iterator it_find = find(tkerrorlist.begin(), tkerrorlist.end(), itPixelError->getType());
-	        if(it_find != tkerrorlist.end()){
-		  tkerror_detidcollection->push_back(errordetid);
-	        }
-	      }
+                std::vector<int>::iterator it_find = find(tkerrorlist.begin(), tkerrorlist.end(), itPixelError->getType());
+               if(it_find != tkerrorlist.end()){
+              tkerror_detidcollection->push_back(errordetid);
+               }
+            }
               // fill list of detIds with errors to be studied
-              if(!usererrorlist.empty()) {
-	        std::vector<int>::iterator it_find = find(usererrorlist.begin(), usererrorlist.end(), itPixelError->getType());
-	        if(it_find != usererrorlist.end()){
-		  usererror_detidcollection->push_back(errordetid);
-	        }
-	      }
-	    }
-	  }
-	}
+          if(!usererrorlist.empty()) {
+            std::vector<int>::iterator it_find = find(usererrorlist.begin(), usererrorlist.end(), itPixelError->getType());
+            if(it_find != usererrorlist.end()){
+            usererror_detidcollection->push_back(errordetid);
+            }
+          }
+         }
+       }
       }
     }
-  }
+   } // end of includeErrors
+  }  // end of for loop
 
   if(includeErrors) {
     edm::DetSet<SiPixelRawDataError>& errorDetSet = errorcollection->find_or_insert(dummydetid);
@@ -290,4 +328,26 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
     ev.put(std::move(tkerror_detidcollection));
     ev.put(std::move(usererror_detidcollection), "UserErrorModules");
   }
-}
+  //GPU specific
+ 
+  static int eventCount=0;
+  eventCount ++;
+  //for(unsigned int i=0;i<fedCounter;i++) {
+   // cout<<"fedId: "<<i<<"   Index: "<<fedIndex[150+i]<<endl;
+  //}
+  //using namespace std::chrono;
+  //high_resolution_clock:: time_point t1 = high_resolution_clock::now();
+  //cout<<"RawToDigi Conversion started on GPU..."<<endl;
+  RawToDigi_kernel_wrapper (wordCounterGPU, word, fedCounter,fedIndex);
+  //high_resolution_clock:: time_point t2 = high_resolution_clock::now();
+  //double micro_seconds = duration_cast<microseconds>(t2-t1).count();
+	//ofstream timeFile;
+	//timeFile.open("RawToDigiGPUTime1E.txt", ios::out | ios::app); 
+	//timeFile<<setw(2)<<eventCount<<setw(8)<<wordCounterGPU<<setw(8)<<micro_seconds<<endl;
+	wordCounterGPU = 0;
+  fedCounter =0;
+} // end of produce function
+
+//define as runnable module
+DEFINE_FWK_MODULE(SiPixelRawToDigi);
+
