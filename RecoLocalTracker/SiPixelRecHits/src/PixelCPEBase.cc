@@ -20,8 +20,9 @@
 // Magnetic field
 #include "MagneticField/Engine/interface/MagneticField.h"
 
-
+#include <iomanip>
 #include <iostream>
+#include <fstream>
 
 using namespace std;
 
@@ -145,6 +146,9 @@ void PixelCPEBase::fillDetParams()
    
    
    m_DetParams.resize(m_detectors);
+   unsigned int moduleId =0;
+   ofstream cpeFile("Pixel_CPE_Phase1_database.dat");
+   cpeFile<<"RawId\t\t"<<"X0\t\t"<<"Y0\t\t"<<"Z0\t\t"<<"theDetR\t\t"<<"theDetZ\t\t"<<"lorentzShiftX\t"<<"lorentzShiftY"<<endl;
    //cout<<"caching "<<m_detectors<<" pixel detectors"<<endl;
    for (unsigned i=0; i!=m_detectors;++i) {
       auto & p=m_DetParams[i];
@@ -165,6 +169,9 @@ void PixelCPEBase::fillDetParams()
       //--- ( BoundSurface : Surface : GloballyPositioned<float> )
       //p.theDetR = p.theDet->surface().position().perp();  //Not used, AH
       //p.theDetZ = p.theDet->surface().position().z();  //Not used, AH
+
+      float theDetR = p.theDet->surface().position().perp();  
+      float theDetZ = p.theDet->surface().position().z(); 
       //--- Define parameters for chargewidth calculation
       
       //--- bounds() is implemented in BoundSurface itself.
@@ -207,13 +214,18 @@ void PixelCPEBase::fillDetParams()
       p.bz = Bfield.z();
       p.bx = Bfield.x();
       
-      
+    /***************Extract the CPE database for the GPU CPE******/
+
+      moduleId = p.theDet->geographicalId().rawId();
       // Compute the Lorentz shifts for this detector element
       if ( (theFlag_==0) || DoLorentz_ ) {  // do always for generic and if(DOLorentz) for templates
          p.driftDirection = driftDirection(p, Bfield );
          computeLorentzShifts(p);
+         cpeFile<<setw(20)<<moduleId<<setw(20)<<p.theOrigin.x()<<setw(20)<<p.theOrigin.y()<<setw(20)
+        <<p.theOrigin.z()<<setw(20)<<theDetR<<setw(20)<<theDetZ<<setw(20)
+        <<p.lorentzShiftInCmX<<setw(20)<<p.lorentzShiftInCmY<<endl;
       }
-      
+     
       
       LogDebug("PixelCPEBase") << "***** PIXEL LAYOUT *****"
       << " thePart = " << p.thePart
@@ -224,6 +236,7 @@ void PixelCPEBase::fillDetParams()
       
       
    }
+   cpeFile.close();
 }
 
 //-----------------------------------------------------------------------------
