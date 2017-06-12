@@ -24,13 +24,14 @@
 // CUDA runtime
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include "CudaError.h"
 #include "RawToDigiGPU.h"
-#include "RawToDigiCPUGPU.h"
+#include "RawToDigiMem.h"
 using namespace std;
 
 // forward declaration to be moved in header file
 void PixelCluster_Wrapper(uint *xx_adc, uint *yy_adc, uint *adc_d,const uint wordCounter, 
-                          const int *mIndexStart, const int *mIndexEnd, uint *xx, uint *yy);
+                          const int *mIndexStart, const int *mIndexEnd);
 
 /*
 void initCablingMap() {
@@ -81,15 +82,7 @@ void initDeviceMemory() {
     // Number of words for all the feds 
   const uint MAX_WORD_SIZE = MAX_FED*MAX_WORD*sizeof(uint); 
   
-  // all the below host memory are only for testing purpose
-  // host memory only be used in CPE
-  adc_h  = (uint*)malloc(MAX_WORD_SIZE);
-  word_h = (uint*)malloc(MAX_WORD_SIZE);
-  fedIndex_h = (uint*)malloc(2*(MAX_FED+1)*sizeof(uint)); // +1 for last fed index
-  xx     =   (uint*)malloc(MAX_WORD_SIZE);
-  yy     =   (uint*)malloc(MAX_WORD_SIZE);
-  RawId  =   (uint*)malloc(MAX_WORD_SIZE);
-  moduleId = (uint*)malloc(MAX_WORD_SIZE);
+
   int mSize = totalModule*sizeof(int);
   mIndexStart = (int*)malloc(mSize); 
   mIndexEnd = (int*)malloc(mSize);
@@ -102,7 +95,7 @@ void initDeviceMemory() {
   cudaMalloc((void**)&yy_adc,         MAX_WORD_SIZE);
   cudaMalloc((void**)&adc_d,        MAX_WORD_SIZE);
   cudaMalloc((void**)&layer_d ,     MAX_WORD_SIZE);
-  cudaMalloc((void**)&RawId_d,      MAX_WORD_SIZE);
+
   cudaMalloc((void**)&moduleId_d,   MAX_WORD_SIZE);
   cudaMalloc((void**)&mIndexStart_d, mSize);
   cudaMalloc((void**)&mIndexEnd_d, mSize);
@@ -116,15 +109,7 @@ void initDeviceMemory() {
 void freeMemory() {
 
   //GPU specific
-  // memory used for testing purpose will be released during
-  // deployment.
-  free(word_h);
-  free(fedIndex_h);
-  free(adc_h);
-  free(xx);
-  free(yy);
-  free(RawId);
-  free(moduleId);
+ 
   free(mIndexStart);
   free(mIndexEnd);
   cudaFree(word_d);
@@ -135,10 +120,11 @@ void freeMemory() {
   cudaFree(yy_d);
   cudaFree(xx_adc);
   cudaFree(yy_adc);
-  cudaFree(RawId_d);
+  
   cudaFree(moduleId_d);
   cudaFree(mIndexStart_d);
   cudaFree(mIndexEnd_d);
+
   cudaFree(Map->RawId);
   cudaFree(Map->rocInDet); 
   cudaFree(Map->moduleId);
@@ -298,13 +284,11 @@ __global__ void applyADCthreshold_kernel
 
 // Kernel to perform Raw to Digi conversion
 __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const uint *fedIndex, 
-                                 uint *XX, uint *YY, uint *RawId, uint *moduleId, 
-                                 int *mIndexStart, int *mIndexEnd, uint *ADC, uint *layerArr,
-                                 uint *fedIdArr ) 
+                                 uint *XX, uint *YY, uint *moduleId, int *mIndexStart, 
+                                 int *mIndexEnd, uint *ADC, uint *layerArr) 
 {
-  //printf("Inside GPU: \n");
   int blockId = blockIdx.x;
-  int fedId    = fedIndex[blockId];
+  uint fedId    = fedIndex[blockId];
   int threadId = threadIdx.x;
   //if(threadIdx.x==0) printf("fedId: %d\n",fedId);
   int begin  = fedIndex[MAX_FED+blockId];
@@ -320,11 +304,9 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
         //noise and dead channels are ignored
         XX[gIndex] = 0;  // 0 is an indicator of a noise/dead channel
         YY[gIndex]  = 0; // skip these pixels during clusterization
-        RawId[gIndex] = 0; 
-        ADC[gIndex]   = 0; 
+        ADC[gIndex]   = 0;
+        layerArr[gIndex] = 0; 
         moduleId[gIndex] = 9999; //9999 is the indication of bad module, taken care later  
-        layerArr[gIndex] = 0;
-        fedIdArr[gIndex] = fedId; // used for testing
         continue ;         // 0: bad word, 
       } 
       uint link  = getLink(ww);            // Extract link
@@ -332,16 +314,11 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
       DetIdGPU detId = getRawId(Map, fedId, link, roc);
       uint rawId  = detId.RawId;
       uint rocIdInDetUnit = detId.rocInDet;
-      //if(fedId==48) {
-        //printf("fedId: %d  link: %d  roc: %d  rawId: %u  rocInDU: %d\n",fedId+1200,link,roc,rawId, rocIdInDetUnit);
-      //}
+     
       bool barrel = isBarrel(rawId);
   
-      //printf("ww: %u    link:  %u  roc: %u   rawId: %u\n", ww, link, roc, rawId);
-      //printf("from CablingMap  rocInDU: %u  moduleId: %u", rocIdInDetUnit, detId.moduleId);
-      //printf("barrel: %d\n", barrel);
       uint layer =0;//, ladder =0;
-      int side =0, panel =0, blade =0, module=0;//disk =0,
+      int side =0, panel =0, module=0;//disk =0,blade =0
     
       if(barrel) {
         layer  = (rawId >> layerStartBit_)  & layerMask_;
@@ -380,16 +357,10 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
       //if(fedId==48)
         //printf("%14u%6d%6d%6d\n",ww,localPix.row,localPix.col, getADC(ww));
       Pixel globalPix = frameConversion(barrel, side, layer,rocIdInDetUnit, localPix);
-      XX[gIndex]    = globalPix.row +1 ; // origin shifting by 1 0-159
+      XX[gIndex]    = globalPix.row +1  ; // origin shifting by 1 0-159
       YY[gIndex]    = globalPix.col +1 ; // origin shifting by 1 0-415
       ADC[gIndex]   = getADC(ww);
-      RawId[gIndex] = detId.RawId; // only for testing
       layerArr[gIndex] = layer;
-      fedIdArr[gIndex] = fedId;     // used for testing
-      // only for testing purpose: White box testing
-      //XX[gIndex] = fedId; // fedId for pattern
-      //YY[gIndex] = gIndex; // wwIndex for pattern
-      //RawId[gIndex] = ww;
       moduleId[gIndex] = detId.moduleId;
     } // end of if(gIndex < end)
   } // end of for(int i =0;i<no_itr...)
@@ -402,6 +373,7 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
   // atomicExch(address, value), set the variable at address to value.
   // do the swapping for above case and replace the 9999 with 
   // valid moduleId
+  
   for(int i =0; i<no_itr; i++) { 
     int gIndex = begin + threadId + i*blockDim.x;  
     if(gIndex <end) {
@@ -411,8 +383,6 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
         //*swap all the digi id
         atomicExch(&XX[gIndex+2], atomicExch(&XX[gIndex+1], XX[gIndex+2]));
         atomicExch(&YY[gIndex+2], atomicExch(&YY[gIndex+1], YY[gIndex+2]));
-        atomicExch(&RawId[gIndex+2], atomicExch(&RawId[gIndex+1], RawId[gIndex+2])); 
-        //atomicExch(&fedIdArr[gIndex+2], atomicExch(&fedIdArr[gIndex+1], fedIdArr[gIndex+2]));
         atomicExch(&ADC[gIndex+2], atomicExch(&ADC[gIndex+1], ADC[gIndex+2]));
         atomicExch(&layerArr[gIndex+2], atomicExch(&layerArr[gIndex+1], layerArr[gIndex+2]));
       }
@@ -425,8 +395,6 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
         //*swap all the digi id
         atomicExch(&XX[gIndex+1], atomicExch(&XX[gIndex], XX[gIndex+1]));
         atomicExch(&YY[gIndex+1], atomicExch(&YY[gIndex], YY[gIndex+1]));
-        atomicExch(&RawId[gIndex+1], atomicExch(&RawId[gIndex], RawId[gIndex+1])); 
-        //atomicExch(&fedIdArr[gIndex+2], atomicExch(&fedIdArr[gIndex+1], fedIdArr[gIndex+2]));
         atomicExch(&ADC[gIndex+1], atomicExch(&ADC[gIndex], ADC[gIndex+1]));
         atomicExch(&layerArr[gIndex+1], atomicExch(&layerArr[gIndex], layerArr[gIndex+1]));
       }
@@ -471,6 +439,7 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
       } //end of if(gIndex!= begin && (gIndex<(end-1)) ...  
     } //end of if(gIndex <end) 
   }
+  
 } // end of Raw to Digi kernel
 
 // kernel wrapper called from runRawToDigi_kernel
@@ -478,112 +447,91 @@ void RawToDigi_kernel_wrapper(const uint wordCounter,uint *word,const uint fedCo
   
  
   cout<<"Inside RawToDigi , total words: "<<wordCounter<<endl;
-  int nBlocks = fedCounter; // = MAX_FED
+  int nBlocks = fedCounter; // =108
   int threads = 512; //
   fedIndex[MAX_FED+nBlocks] = wordCounter;
-  // for debugging 
-  uint *fedId;
-  int mSize = totalModule*sizeof(int);
-  { 
-    uint eventSize = wordCounter*sizeof(uint);
-	  // initialize moduleStart & moduleEnd with some constant(-1)
-	  // number just to check if it updated in kernel or not
-    cudaMemset(mIndexStart_d, -1, mSize);
-    cudaMemset(mIndexEnd_d, -1, mSize);
-    cudaMemcpy(word_d, word, eventSize, cudaMemcpyHostToDevice);
-    cudaMemcpy(fedIndex_d, fedIndex, 2*(MAX_FED+1)*sizeof(uint), cudaMemcpyHostToDevice); 
-    // for debugging 
-    cudaMallocManaged((void**)&fedId, eventSize);
-    // Launch rawToDigi kernel
-    RawToDigi_kernel<<<nBlocks,threads>>>(Map,word_d, fedIndex_d, xx_d, yy_d, RawId_d,
-                                          moduleId_d, mIndexStart_d, mIndexEnd_d, adc_d, layer_d,fedId);
-    cudaDeviceSynchronize();
-
-    cudaMemcpy(yy  , yy_d,    eventSize,    cudaMemcpyDeviceToHost);
-    cudaMemcpy(adc_h, adc_d, eventSize, cudaMemcpyDeviceToHost);
-    cudaMemcpy(moduleId, moduleId_d, eventSize, cudaMemcpyDeviceToHost);
-    cudaMemcpy(xx,    xx_d,   eventSize, cudaMemcpyDeviceToHost);
-    cudaMemcpy(mIndexStart, mIndexStart_d, mSize, cudaMemcpyDeviceToHost);
-    cudaMemcpy(mIndexEnd,   mIndexEnd_d,   mSize, cudaMemcpyDeviceToHost);
-    cudaMemcpy(word, RawId_d, eventSize, cudaMemcpyDeviceToHost);
-
-     // apply the correction to the moduleStart & moduleEnd
-     // if module contains only one pixel then either moduleStart 
-     // or moduleEnd is not updated(remains 9999) in RawToDigi kernel
-     // ex. moduleStart[1170] =9999 & moduleEnd[1170] = 34700
-     // because of 1 pixel moduleStart[1170] didn't update
-     // as per the if condition
-    
-    for(int i=0;i<totalModule;i++) {
-      // if module is empty then index are not updated in kernel
-      if(mIndexStart[i]==-1 && mIndexEnd[i]==-1) {
-        mIndexStart[i]=0;
-        mIndexEnd[i]=0;
-      }
-      else if(mIndexStart[i]==-1) {
-        mIndexStart[i] = mIndexEnd[i];
-      }
-      else if(mIndexEnd[i]==-1) {
-        mIndexEnd[i] = mIndexStart[i];
-      }
-    }
-    //copy te data back to the device memory
-    cudaMemcpy(mIndexStart_d, mIndexStart, mSize, cudaMemcpyHostToDevice);
-    cudaMemcpy(mIndexEnd_d,   mIndexEnd,   mSize, cudaMemcpyHostToDevice);
-    
-  }
-  static int eventno = 0;
-  ofstream outFile;
-  outFile.open("R2D_GPU.txt", ios::out | ios::app);
-  outFile<<"fedId\t"<<"RawId\t"<<"xx\t"<<"yy\t"<<"adc"<<endl;  
-  uint x=0, y=0;
-  for(uint i=0; i<wordCounter;i++) {
-    //if(RawId[i]!=0)
-    //outFile <<setw(6)<<moduleId[i]+1200<<setw(14)<<word[i]<<setw(6)<<xx[i]<<setw(6)<<yy[i]<<setw(6)<<adc_h[i]<<endl;
-  x=xx[i]; y=yy[i];
-  if(x>0) {x=x-1; y=y-1;} // origin was shifted in RawToDigi kernel for cluster
-    outFile<<setw(6)<<fedId[i]+1200<<setw(14)<<word[i]<<setw(6)<<x<<setw(6)<<y<<setw(6)<<adc_h[i]<<endl;
-     //cout<<"ww: "<<setw(10)<<RawId[i]<<"  xx: "<<setw(3)<<xx[i]<<"  yy: "<<setw(3)<<yy[i]<<endl;
-  }
-  outFile.close();
-  cudaFree(fedId);
-  //cout<<"RawToDigi Kernel executed successfully!\n";
   
-  /*ofstream outFile; 
-  outFile.open("InputForCluster.txt");
-  outFile<<"FedId   "<<"  wwIndex   "<<"  moduleId  "<<" RawId  "<<endl;
-  for(uint i=0; i<wordCounter;i++) {
-   // if(RawId[i]!=0)
-    outFile <<setw(10)<<xx[i]<<"\t\t"<<setw(10)<<yy[i]<<endl;
-    //outFile<<setw(4)<<xx[i]<<setw(12)<<yy[i]<<setw(12)<<moduleId[i]<<setw(16)<<RawId[i]<<endl;
-    //cout<<"ww: "<<setw(10)<<RawId[i]<<"  xx: "<<setw(3)<<xx[i]<<"  yy: "<<setw(3)<<yy[i]<<endl;
+  int mSize = totalModule*sizeof(int);
+  uint eventSize = wordCounter*sizeof(uint);
+	// initialize moduleStart & moduleEnd with some constant(-1)
+	// number just to check if it updated in kernel or not
+  cudaMemset(mIndexStart_d, -1, mSize);
+  cudaMemset(mIndexEnd_d, -1, mSize);
+  cudaMemcpy(word_d, word, eventSize, cudaMemcpyHostToDevice);
+  cudaMemcpy(fedIndex_d, fedIndex, 2*(MAX_FED+1)*sizeof(uint), cudaMemcpyHostToDevice); 
+  // Launch rawToDigi kernel
+  RawToDigi_kernel<<<nBlocks,threads>>>(Map,word_d, fedIndex_d, xx_d, yy_d, moduleId_d,
+                                        mIndexStart_d, mIndexEnd_d, adc_d,layer_d);
+  cudaDeviceSynchronize();
+  checkCUDAError("Error in RawToDigi_kernel");
+  /*
+  uint size = wordCounter*sizeof(uint);
+  uint *xx,*yy,*adc,*fedId,*moduleId;
+  xx = (uint*)malloc(wordCounter*sizeof(uint));
+  yy = (uint*)malloc(wordCounter*sizeof(uint));
+  adc = (uint*)malloc(wordCounter*sizeof(uint));
+  fedId = (uint*)malloc(wordCounter*sizeof(uint));
+  moduleId = (uint*)malloc(wordCounter*sizeof(uint));
+  cudaMemcpy(xx,xx_d, size, cudaMemcpyDeviceToHost);
+  cudaMemcpy(yy,yy_d, size, cudaMemcpyDeviceToHost);
+  cudaMemcpy(adc,adc_d, size, cudaMemcpyDeviceToHost);
+  cudaMemcpy(fedId,layer_d, size, cudaMemcpyDeviceToHost);
+  cudaMemcpy(moduleId,moduleId_d, size, cudaMemcpyDeviceToHost);
+  //ofstream r2d("R2D_debug_fedId_xyadc_moduleId.txt");
+  ofstream R2D("R2D_GPU_v1.txt");
+  R2D<<setw(6)<<"fedId"<<setw(14)<<"RawId"<<setw(6)<<"xx"<<setw(6)<<"yy"<<setw(6)<<"adc"<<endl;
+  for(int i=0;i<wordCounter;i++) {
+    R2D<<setw(6)<<fedId[i]+1200<<setw(14)<<moduleId[i]<<setw(6)<<xx[i]<<setw(6)<<yy[i]<<setw(6)<<adc[i]<<endl;
   }
-  */
-  //ofstream mse("ModuleStartEndIndex.txt");
-  //for(int i=0;i<totalModule;i++) {
-   // mse<<mIndexStart[i]<<"\t\t"<<mIndexEnd[i]<<endl;
-    //cout<<mIndexStart[i]<<"\t\t"<<mIndexEnd[i]<<endl;
-  //}
-  //mse.close();
-  //outFile.close();                                           
-  //++eventno;
-   
-  //cout<<"Calling pixel cluster"<<endl;
+  R2D.close();
+  free(xx);
+  free(yy);
+  free(adc);
+  free(fedId);
+  free(moduleId); 
+  */ 
+  //---- Prepare the input for clustering----------
+  
+  // This correction can be done during clustering also
+
+  // apply the correction to the moduleStart & moduleEnd
+  // if module contains only one pixel then either moduleStart 
+  // or moduleEnd is not updated(remains 9999) in RawToDigi kernel
+  // ex. moduleStart[1170] =9999 & moduleEnd[1170] = 34700
+  // because of 1 pixel moduleStart[1170] didn't update
+  // as per the if condition
+  
+  // before finding the cluster 
+  
+  cudaMemcpy(mIndexStart, mIndexStart_d, mSize, cudaMemcpyDeviceToHost);
+  cudaMemcpy(mIndexEnd,   mIndexEnd_d,   mSize, cudaMemcpyDeviceToHost);
+  checkCUDAError("Error in memcpy for moduleStart_end D2H");
+  for(int i=0;i<totalModule;i++) {
+    // if module is empty then index are not updated in kernel
+    if(mIndexStart[i]==-1 && mIndexEnd[i]==-1) {
+      mIndexStart[i]=0;
+       mIndexEnd[i]=0;
+    }
+    else if(mIndexStart[i]==-1) {
+      mIndexStart[i] = mIndexEnd[i];
+    }
+    else if(mIndexEnd[i]==-1) {
+      mIndexEnd[i] = mIndexStart[i];
+    }
+    //cout<<"moduleId: "<<i<<" moduleStart[i]: "<<mIndexStart[i]<<" moduleEnd: "<<mIndexEnd[i]<<endl;
+  }
+
+  //copy te data back to the device memory
+  cudaMemcpy(mIndexStart_d, mIndexStart, mSize, cudaMemcpyHostToDevice);
+  cudaMemcpy(mIndexEnd_d,   mIndexEnd,   mSize, cudaMemcpyHostToDevice);
+  
+  checkCUDAError("Error in memcpy for moduleStart_end H2D");
   // kernel to apply adc threashold on the channel
   ADCThreshold adcThreshold;
   uint numThreads = 512;
   uint numBlocks = wordCounter/512 +1;
   applyADCthreshold_kernel<<<numBlocks, numThreads>>>(xx_d, yy_d,layer_d,adc_d,wordCounter,adcThreshold, xx_adc, yy_adc);
   cudaDeviceSynchronize();
-  // only for testing purpose these memcpy used
-  //cudaMemcpy(yy  , yy_adc,    wordCounter*sizeof(uint),    cudaMemcpyDeviceToHost);
-  //cudaMemcpy(adc_h, adc_d, wordCounter*sizeof(uint), cudaMemcpyDeviceToHost);
-  //cudaMemcpy(moRawToDigiOutput_after_adcThreshold.txtduleId, moduleId_d, eventSize, cudaMemcpyDeviceToHost);
-  //cudaMemcpy(xx,    xx_adc, wordCounter*sizeof(uint), cudaMemcpyDeviceToHost);
-  //for(uint i=0; i<wordCounter;i++) {
-      //if(RawId[i]!=0)
-      //cout <<"\t\t"<<adc_h[i]<<"\t\t"<<xx[i]<<"\t\t"<<yy[i]<<endl;
-  //}
-  // call to pixelClusterizer kernel from here
-  //PixelCluster_Wrapper(xx_adc , yy_adc, adc_d,wordCounter, mIndexStart_d, mIndexEnd_d,xx,yy);
+  checkCUDAError("Error in applying ADC threshold");
+  PixelCluster_Wrapper(xx_adc , yy_adc, adc_d,wordCounter, mIndexStart_d, mIndexEnd_d);
 }

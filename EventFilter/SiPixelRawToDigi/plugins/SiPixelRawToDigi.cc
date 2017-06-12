@@ -44,14 +44,14 @@
 #include <fstream>
 // for GPU
 // device memory intialization for RawTodigi
-#include "RawToDigiCPUGPU.h"
+#include "RawToDigiMem.h"
 // device memory initialization for CPE
-//#include "CPEGPUMem.h"
+#include "CPEGPUMem.h"
+//device memory initialization for clustering
+#include "PixelClusterMem.h"
 
 using namespace std;
-// wrapper function to call RawToDigi on the GPU
-void RawToDigi_kernel_wrapper (const unsigned int wordCounterGPU,
-     unsigned int *word,const unsigned int fedCounter,unsigned int *fedIndex);
+
 // -----------------------------------------------------------------------------
 SiPixelRawToDigi::SiPixelRawToDigi( const edm::ParameterSet& conf ) 
   : config_(conf), 
@@ -116,13 +116,15 @@ SiPixelRawToDigi::SiPixelRawToDigi( const edm::ParameterSet& conf )
   
   //GPU specific
   const int MAX_FED  = 150;
-  const int MAX_WORD = 4096;
+  const int MAX_WORD = 2000;
   word = (unsigned int*)malloc(MAX_FED*MAX_WORD*sizeof(unsigned int));
   fedIndex =(unsigned int*)malloc(2*(MAX_FED+1)*sizeof(unsigned int));
   // allocate memory for RawToDigi on GPU
   initDeviceMemory();
   // allocate memory for CPE on GPU
-  //initDeviceMemCPE();
+  initDeviceMemCPE();
+  // allocate auxilary memory for clustering
+  initDeviceMemCluster();
 }
 
 
@@ -142,7 +144,9 @@ SiPixelRawToDigi::~SiPixelRawToDigi() {
   // free device memory used for RawToDigi on GPU
   freeMemory(); 
   // free device memory used for CPE on GPU
-  //freeDeviceMemCPE();
+  freeDeviceMemCPE();
+  // free auxilary memory used for clustering
+  freeDeviceMemCluster();
 }
 
 void
@@ -331,10 +335,28 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
   //GPU specific
  
   static int eventCount=0;
-  eventCount ++;
-  //for(unsigned int i=0;i<fedCounter;i++) {
+  eventCount++;
+  //cout<<"Event: "<<setw(4)<<eventCount<<"  Total Hits: "<<setw(8)<<wordCounterGPU<<endl;
+  // following code is to extract the Raw data put it to ascii file and pass it to
+  // standalone RawToDigi
+  /*
+  ofstream fedEventFile("fedCount_EventFile.dat", ios::out | ios::app);
+  fedEventFile<<setw(6)<<fedCounter<<setw(8)<<wordCounterGPU<<endl;
+  fedEventFile.close();
+  // to store the fedId and there index
+  ofstream fedIndexFile("fedIndexFile.dat", ios::out | ios::app);
+  for(unsigned int i=0;i<150*2;i++) {
    // cout<<"fedId: "<<i<<"   Index: "<<fedIndex[150+i]<<endl;
-  //}
+   fedIndexFile<<fedIndex[i]<<endl;
+   fedIndex[i] =0;
+  }
+  ofstream dataFile("wordDataFile.dat", ios::out | ios::app);
+  for(unsigned int i=0;i<wordCounterGPU;i++) {
+    dataFile<<word[i]<<endl;
+  }
+  fedIndexFile.close();
+  dataFile.close();
+  */
   //using namespace std::chrono;
   //high_resolution_clock:: time_point t1 = high_resolution_clock::now();
   //cout<<"RawToDigi Conversion started on GPU..."<<endl;

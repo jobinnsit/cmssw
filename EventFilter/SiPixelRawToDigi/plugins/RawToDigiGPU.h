@@ -38,7 +38,7 @@ const uint numColsInRoc = 52;
  const uint MAX_FED  = 150;  
  const uint MAX_LINK = 48; //maximum links/channels for phase1 
  const uint MAX_ROC  = 8;
- const uint MAX_WORD = 4096;//500; 
+ const uint MAX_WORD = 2000;//500; 
  //const uint NSTREAM  = 4;
                  
  const uint ADC_shift  = 0;
@@ -96,18 +96,10 @@ struct  CablingMap{
   uint *moduleId;
 };
 //CablingMap *Map;
-struct Digi 
-{
-  uint *xx;
-  uint *yy;
-  uint *module;
-};
 
  //GPU specific
- uint *word_h, *fedIndex_h, *adc_h;
  uint *word_d, *fedIndex_d;       // Device copy of input data
- uint *xx, *yy, *RawId, *moduleId;        // rawId for testing purpose only
- uint *xx_d, *yy_d,*xx_adc, *yy_adc,  *RawId_d, *moduleId_d, *adc_d, *layer_d;  // Device copy
+ uint *xx_d, *yy_d,*xx_adc, *yy_adc, *moduleId_d, *adc_d, *layer_d;  // Device copy
  // store the start and end index for each module (total 1856 modules-phase 1)
  int totalModule = 1856; // for phase 1, we have 1856 modules
  int *mIndexStart, *mIndexEnd, *mIndexStart_d, *mIndexEnd_d; 
