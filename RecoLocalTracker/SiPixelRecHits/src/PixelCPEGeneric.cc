@@ -15,6 +15,8 @@
 #include "boost/multi_array.hpp"
 
 #include <iostream>
+#include <iomanip>
+#include <fstream>
 using namespace std;
 
 namespace {
@@ -248,6 +250,30 @@ PixelCPEGeneric::localPosition(DetParam const & theDetParam, ClusterParam & theC
    collect_edge_charges( theClusterParam,
                         Q_f_X, Q_l_X,
                         Q_f_Y, Q_l_Y );
+   //sushil to print the cluster info that will be given to CPU standalone code 
+  
+  ofstream iFile1("CPE_InputForCPU.txt", ios::app | ios::out);
+  static bool write = true;
+  if(write) {
+   iFile1<<"mod#\tcluster#\tpixhit#\t x \t y \t adc"<<endl;
+   write = false;
+  }
+  ClusterParamGeneric & theClusterP = static_cast<ClusterParamGeneric &>(theClusterParam);
+  int isize = theClusterP.theCluster->size();
+  int module=  theDetParam.theDet->index();
+  static int flag = -1;
+  static int clusterId = 1;
+  if(flag!=module) {
+    flag=module;
+   clusterId=1;
+  }
+  else clusterId++;
+  for(int i=0; i!=isize;i++) {
+    auto const & pixel = theClusterP.theCluster->pixel(i);
+    iFile1<<setw(4)<<module<<setw(4)<<clusterId<<setw(4)<<i<<setw(8)<<pixel.x<<setw(8)<<pixel.y
+       <<setw(8)<<pixel.adc<<endl;
+  }
+  iFile1.close();
    
    //--- Find the inner widths along X and Y in one shot.  We
    //--- compute the upper right corner of the inner pixels
@@ -381,8 +407,25 @@ PixelCPEGeneric::localPosition(DetParam const & theDetParam, ClusterParam & theC
    } // if ( IrradiationBiasCorrection_ )
    
    //cout<<" in PixelCPEGeneric:localPosition - pos = "<<xPos<<" "<<yPos<<endl; //dk
-   
+  
+  ofstream iFile2("CMSSW920_CPE_Output.txt", ios::app | ios::out);
+  static bool write1 = true;
+  if(write1) {
+   iFile2<<"moduleId\t\t clusterId\t\t xhit \t yhit"<<endl;
+   write1=false;
+  } 
+  int module1=  theDetParam.theDet->index();
+  static int flag1 = -1;
+  static int clusterId1 = 1;
+  if(flag1!=module1) {
+    flag1=module1;
+    clusterId1=1;
+   }                                                                                                                          
+   else clusterId1++;
+     iFile2<<setw(14)<<module1<<setw(10)<<clusterId1<<setw(20)<<xPos<<setw(20)<<yPos<<endl;
    //--- Now put the two together
+     iFile2.close();
+  
    LocalPoint pos_in_local( xPos, yPos );
    return pos_in_local;
 }
@@ -415,7 +458,7 @@ generic_position_formula( int size,                //!< Size of this projection.
 {
    
    //cout<<" in PixelCPEGeneric:generic_position_formula - "<<endl; //dk
-   
+
    float geom_center = 0.5f * ( upper_edge_first_pix + lower_edge_last_pix );
    
    //--- The case of only one pixel in this projection is separate.  Note that
@@ -426,11 +469,9 @@ generic_position_formula( int size,                //!< Size of this projection.
    //--- Width of the clusters minus the edge (first and last) pixels.
    //--- In the note, they are denoted x_F and x_L (and y_F and y_L)
    float W_inner      = lower_edge_last_pix - upper_edge_first_pix;  // in cm
-   
    //--- Predicted charge width from geometry
    float W_pred = theThickness * cot_angle                     // geometric correction (in cm)
    - lorentz_shift;                    // (in cm) &&& check fpix!
-   
    //cout<<" in PixelCPEGeneric:generic_position_formula - "<<W_inner<<" "<<W_pred<<endl; //dk
    
    //--- Total length of the two edge pixels (first+last)
@@ -469,7 +510,7 @@ generic_position_formula( int size,                //!< Size of this projection.
    if(Qsum==0) Qsum=1.0f;
    //float hit_pos = geom_center + 0.5f*(Qdiff/Qsum) * W_eff + half_lorentz_shift;
    float hit_pos = geom_center + 0.5f*(Qdiff/Qsum) * W_eff;
-   
+   count++;
    //cout<<" in PixelCPEGeneric:generic_position_formula - "<<hit_pos<<" "<<lorentz_shift*0.5<<endl; //dk
    
 #ifdef EDM_ML_DEBUG
@@ -550,8 +591,8 @@ collect_edge_charges(ClusterParam & theClusterParamBase,  //!< input, the cluste
       auto const & pixel = theClusterParam.theCluster->pixel(i);
       // ggiurgiu@fnal.gov: add pixel charge truncation
       int pix_adc = pixel.adc;
-      if ( UseErrorsFromTemplates_ && TruncatePixelCharge_ )
-         pix_adc = std::min(pix_adc, theClusterParam.pixmx );
+      //if ( UseErrorsFromTemplates_ && TruncatePixelCharge_ )
+        // pix_adc = std::min(pix_adc, theClusterParam.pixmx );
       
       //
       // X projection
