@@ -227,7 +227,7 @@ void CPE_wrapper(const uint total_cluster, const uint *ClusterId, const uint *In
   cout<<"CPE kernel execution finished!\n";
 
   // for validation purpose only
-  /*
+
   float *xhit, *yhit;
   uint *ClusterId_h;
   ClusterId_h = (uint*)malloc(total_cluster*sizeof(uint));
@@ -251,7 +251,6 @@ void CPE_wrapper(const uint total_cluster, const uint *ClusterId, const uint *In
   free(yhit);
   free(ClusterId_h);
   cpeFile.close();
-  */
   
 }
 

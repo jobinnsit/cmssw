@@ -524,7 +524,35 @@ void RawToDigi_kernel_wrapper(const uint wordCounter,uint *word,const uint fedCo
   //copy te data back to the device memory
   cudaMemcpy(mIndexStart_d, mIndexStart, mSize, cudaMemcpyHostToDevice);
   cudaMemcpy(mIndexEnd_d,   mIndexEnd,   mSize, cudaMemcpyHostToDevice);
-  
+
+  // for validation only
+  uint *xx,*yy;
+  const int size = 150*2000;
+  xx = (uint*)malloc(size*sizeof(uint));
+  yy = (uint*)malloc(size*sizeof(uint));
+  cudaMemcpy(xx,xx_d,wordCounter*sizeof(uint),cudaMemcpyDeviceToHost);
+  cudaMemcpy(yy,yy_d, wordCounter*sizeof(uint), cudaMemcpyDeviceToHost);
+   ofstream outFile;
+   outFile.open("ClusterInput_CPU.txt");
+   outFile<<"xx"<<"\tyy"<<endl;  
+   for(uint i=0; i<wordCounter;i++) {
+     //if(RawId[i]!=0)
+      outFile <<setw(6)<<xx[i]<<setw(6)<<yy[i]<<endl;
+     //outFile<<setw(4)<<fedId[i]+1200<<setw(14)<<word[i]<<setw(4)<<xx[i]<<setw(4)<<yy[i]<<se    tw(4)<<adc_h[i]<<endl;
+      //cout<<"ww: "<<setw(10)<<RawId[i]<<"  xx: "<<setw(3)<<xx[i]<<"  yy: "<<setw(3)<<yy[i]<    <endl;
+   }
+   outFile.close();
+   
+   ofstream mse("ModuleStartEndIndex.txt");
+   mse<<"ModuleId\t"<<"ModuleStartIndex\t"<<"ModuleEndIndex"<<endl;
+   for(int i=0;i<totalModule;i++) {
+     mse<<setw(4)<<i<<setw(8)<<mIndexStart[i]<<setw(8)<<mIndexEnd[i]<<endl;
+     //cout<<mIndexStart[i]<<"\t\t"<<mIndexEnd[i]<<endl;
+   } 
+   mse.close();
+   free(xx);
+   free(yy);
+  //validation ends here
   checkCUDAError("Error in memcpy for moduleStart_end H2D");
   // kernel to apply adc threashold on the channel
   ADCThreshold adcThreshold;

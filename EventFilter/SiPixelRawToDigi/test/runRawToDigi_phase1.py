@@ -39,7 +39,9 @@ fileNames =  cms.untracked.vstring(
 #'file:step2.root'
 
 #2017 CMSSW_9_2_0
-'file:/afs/cern.ch/work/s/sdubey/data/Raw_Data_Phase1/7C654D7C-9E40-E711-8690-0025905A48BC.root'
+#'file:/afs/cern.ch/work/s/sdubey/data/Raw_Data_Phase1/7C654D7C-9E40-E711-8690-0025905A48BC.root'
+'file:/home/fpantale/data/920/PU50/085D5AAF-9E40-E711-B12A-0025905A609E.root'
+#'file:/home/fpantale/data/920/PU50/3809CB76-9E40-E711-898A-0CC47A7C35C8.root'
 #2016 CMSSW_8_1_0
 #'file:/afs/cern.ch/work/s/sdubey/data/Raw_Data_Phase1/0216ABF7-19B1-E611-8786-0025905A60F8.root'
 #'file:/afs/cern.ch/work/s/sdubey/data/9279A7C3-59ED-E511-95C8-0025905A60F8.root'

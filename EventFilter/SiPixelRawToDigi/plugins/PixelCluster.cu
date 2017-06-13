@@ -556,9 +556,14 @@ void PixelCluster_Wrapper(uint *d_xx, uint *d_yy, uint *d_ADC,const uint wordCou
     //since origin is shifted by (1,1) move it back to (0,0) before giving it CPE
     shift_origin_kernel<<<N_blocks, N_threads>>>(wordCounter,d_xx,d_yy); 
     cudaDeviceSynchronize();
-    CPE_wrapper(total_cluster,d_gClusterId1, Index, d_xx, d_yy, d_ADC);
-
-  /*  
+    // only for validation purpose
+    uint *xx,*yy,*adc_h, *gClusterId;
+    const int size = 150*2000;
+    xx = (uint*)malloc(size*sizeof(uint));
+    yy = (uint*)malloc(size*sizeof(uint));
+    adc_h = (uint*)malloc(size*sizeof(uint));
+    gClusterId = (uint*)malloc(size*sizeof(uint));
+    
     int count = wordCounter*sizeof(uint);
     cudaMemcpy(xx, d_xx,count , cudaMemcpyDeviceToHost);
     cudaMemcpy(yy, d_yy,count , cudaMemcpyDeviceToHost);
@@ -566,7 +571,7 @@ void PixelCluster_Wrapper(uint *d_xx, uint *d_yy, uint *d_ADC,const uint wordCou
     cudaMemcpy(adc_h, d_ADC, count, cudaMemcpyDeviceToHost);
     cudaDeviceSynchronize();
 
-    ofstream cfile;
+    ofstream cfile, cluster_out;
     cfile.open("Input_for_CPE_GPU_PartA.txt");
     cfile<<"Index\tClusterId"<<endl;
     for (int i = 0; i < total_cluster; i++) {
@@ -576,14 +581,27 @@ void PixelCluster_Wrapper(uint *d_xx, uint *d_yy, uint *d_ADC,const uint wordCou
     cfile.close();
      cudaMemcpy(gClusterId, d_gClusterId, count , cudaMemcpyDeviceToHost);
     cfile.open("Input_for_CPE_GPU_PartB.txt");
-    cfile<<"ClusterId\t\txx\tyy\tADC"<<endl;
+    cluster_out.open("Cluster_GPU.txt");
+    cluster_out<<"clusterId\t\t"<<"XX\t"<<"YY"<<endl;
+    cfile<<"Index\tClusterId\t\txx\tyy\tADC"<<endl;
     for (int i = 0; i < wordCounter; i++) {
-      //cfile<<setw(10)<<gClusterId[i]<<setw(6)<<xx[i]<<setw(6)<<yy[i]<<setw(10)<<adc_h[i]<<endl;
+      if(gClusterId[i]==0) 
+        cluster_out<<setw(10)<<gClusterId[i]<<setw(6)<<xx[i]<<setw(6)<<yy[i]<<endl;
+      else 
+        cluster_out<<setw(10)<<gClusterId[i]<<setw(6)<<xx[i]+1<<setw(6)<<yy[i]+1<<endl;
+      
       cfile<<setw(6)<<i<<setw(14)<<gClusterId[i]<<setw(6)<<xx[i]<<setw(6)<<yy[i]<<setw(10)<<adc_h[i]<<endl;
     }
     cfile.close();
-  */  
-    // move it into destructor
+    cluster_out.close();
+    free(xx);
+    free(yy);
+    free(adc_h);
+    free(gClusterId);
+    // validation ends here
+   
+    
+    CPE_wrapper(total_cluster,d_gClusterId1, Index, d_xx, d_yy, d_ADC);
     
 } //end of pixel clusterizer
 
