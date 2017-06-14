@@ -23,6 +23,8 @@
 #include <iomanip>
 #include <iostream>
 #include <fstream>
+#include <map>
+#include <tuple>
 
 using namespace std;
 
@@ -146,9 +148,12 @@ void PixelCPEBase::fillDetParams()
    
    
    m_DetParams.resize(m_detectors);
+   //************* To extract the database for cpe***********
    unsigned int moduleId =0;
+   typedef std::tuple<double,double, double, double, double, double,double> cpe_tuple;
+   std::map<unsigned int, cpe_tuple> cpe_map;
    ofstream cpeFile("Pixel_CPE_Phase1_database.dat");
-   cpeFile<<"RawId\t\t"<<"X0\t\t"<<"Y0\t\t"<<"Z0\t\t"<<"theDetR\t\t"<<"theDetZ\t\t"<<"lorentzShiftX\t"<<"lorentzShiftY"<<endl;
+   cpeFile<<"moduleId\t\tRawId\t\t"<<"X0\t\t"<<"Y0\t\t"<<"Z0\t\t"<<"theDetR\t\t"<<"theDetZ\t\t"<<"lorentzShiftX\t"<<"lorentzShiftY"<<endl;
    //cout<<"caching "<<m_detectors<<" pixel detectors"<<endl;
    for (unsigned i=0; i!=m_detectors;++i) {
       auto & p=m_DetParams[i];
@@ -221,9 +226,17 @@ void PixelCPEBase::fillDetParams()
       if ( (theFlag_==0) || DoLorentz_ ) {  // do always for generic and if(DOLorentz) for templates
          p.driftDirection = driftDirection(p, Bfield );
          computeLorentzShifts(p);
-         cpeFile<<setw(20)<<moduleId<<setw(20)<<p.theOrigin.x()<<setw(20)<<p.theOrigin.y()<<setw(20)
-        <<p.theOrigin.z()<<setw(20)<<theDetR<<setw(20)<<theDetZ<<setw(20)
-        <<p.lorentzShiftInCmX<<setw(20)<<p.lorentzShiftInCmY<<endl;
+         double xo = p.theOrigin.x();
+         double yo = p.theOrigin.y();
+         double zo = p.theOrigin.z();
+         double lsx = p.lorentzShiftInCmX;
+         double lsy = p.lorentzShiftInCmY;
+         auto cpe_t = std::make_tuple(xo,yo,zo,theDetR,theDetZ,lsx,lsy);
+         cpe_map.insert(std::pair<unsigned int,cpe_tuple>(moduleId,cpe_t));
+
+        //cpeFile<<setw(20)<<moduleId<<setw(20)<<p.theOrigin.x()<<setw(20)<<p.theOrigin.y()<<setw(20)
+        //<<p.theOrigin.z()<<setw(20)<<theDetR<<setw(20)<<theDetZ<<setw(20)
+        //<<p.lorentzShiftInCmX<<setw(20)<<p.lorentzShiftInCmY<<endl;
       }
      
       
@@ -235,6 +248,15 @@ void PixelCPEBase::fillDetParams()
       //			     << " theLShiftX  = " << p.theLShiftX;
       
       
+   }
+   int moduleNo=0;
+   for(auto it=cpe_map.begin(); it!=cpe_map.end();it++) {
+     unsigned int RawId = it->first;
+     auto cpe_t = it->second;
+     cpeFile<<setw(6)<<moduleNo++<<setw(16)<<RawId<<setw(14)<<get<0>(cpe_t)<<setw(14)<<get<1>(cpe_t)<<setw(14)
+      <<get<2>(cpe_t)<<setw(20)<<get<3>(cpe_t)<<setw(20)<<get<4>(cpe_t)<<setw(20)
+      <<get<5>(cpe_t)<<setw(20)<<get<6>(cpe_t)<<endl;
+
    }
    cpeFile.close();
 }
