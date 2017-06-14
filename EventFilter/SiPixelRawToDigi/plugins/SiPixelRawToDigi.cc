@@ -328,22 +328,76 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
     ev.put(std::move(tkerror_detidcollection));
     ev.put(std::move(usererror_detidcollection), "UserErrorModules");
   }
-  //GPU specific
+  // earlier we were using already processed data for RawToDigi GPU as shown above
+  // our own independent implementation of header and trailer check
+  // GPU specific
+  wordCounterGPU = 0;
+  fedCounter = 0;
+  ErrorChecker errorcheck;
+    for (auto aFed = fedIds.begin(); aFed != fedIds.end(); ++aFed) {
+    int fedId = *aFed;
+    // cout<<"FedId: "<<fedId<<endl;
+    // for GPU
+    // first 150 index stores the fedId and next 150 will store the
+    // start index of word in that fed
+    fedIndex[fedCounter] = fedId-1200;
+    fedIndex[MAX_FED + fedCounter] = wordCounterGPU; // MAX_FED = 150
+    fedCounter++;
+
+    //get event data for this fed
+    const FEDRawData& rawData = buffers->FEDData( fedId );
+    //GPU specific 
+    PixelDataFormatter::Errors errors;
+    int nWords = rawData.size()/sizeof(Word64);
+    if(nWords==0) {
+      word[wordCounterGPU++] =0;
+      continue;
+    }  
+
+    // check CRC bit
+    const Word64* trailer = reinterpret_cast<const Word64* >(rawData.data())+(nWords-1);  
+    if(!errorcheck.checkCRC(errorsInEvent, fedId, trailer, errors)) {
+      word[wordCounterGPU++] =0;
+      continue;
+    }
+
+    // check headers
+    const Word64* header = reinterpret_cast<const Word64* >(rawData.data()); header--;
+    bool moreHeaders = true;
+    while (moreHeaders) {
+      header++;
+      //LogTrace("")<<"HEADER:  " <<  print(*header);
+      bool headerStatus = errorcheck.checkHeader(errorsInEvent, fedId, header, errors);
+      moreHeaders = headerStatus;
+    }
+
+    // check trailers
+    bool moreTrailers = true;
+    trailer++;
+    while (moreTrailers) {
+      trailer--;
+      //LogTrace("")<<"TRAILER: " <<  print(*trailer);
+      bool trailerStatus = errorcheck.checkTrailer(errorsInEvent, fedId, nWords, trailer, errors);
+      moreTrailers = trailerStatus;
+    }
+
+    // data words
+    //LogTrace("")<<"data words: "<< (trailer-header-1);
+
+    const  Word32 * bw =(const  Word32 *)(header+1);
+    const  Word32 * ew =(const  Word32 *)(trailer);
+    if ( *(ew-1) == 0 ) { ew--; }
+    for (auto ww = bw; ww < ew; ++ww) {
+      //LogTrace("")<<"DATA: " <<  print(*word);
+      word[wordCounterGPU++] = *ww;
+    }
+  }  // end of for loop
  
   static int eventCount=0;
   eventCount ++;
-  //for(unsigned int i=0;i<fedCounter;i++) {
-   // cout<<"fedId: "<<i<<"   Index: "<<fedIndex[150+i]<<endl;
-  //}
-  //using namespace std::chrono;
-  //high_resolution_clock:: time_point t1 = high_resolution_clock::now();
-  //cout<<"RawToDigi Conversion started on GPU..."<<endl;
+ 
   RawToDigi_kernel_wrapper (wordCounterGPU, word, fedCounter,fedIndex);
-  //high_resolution_clock:: time_point t2 = high_resolution_clock::now();
-  //double micro_seconds = duration_cast<microseconds>(t2-t1).count();
-	//ofstream timeFile;
-	//timeFile.open("RawToDigiGPUTime1E.txt", ios::out | ios::app); 
-	//timeFile<<setw(2)<<eventCount<<setw(8)<<wordCounterGPU<<setw(8)<<micro_seconds<<endl;
+
 	wordCounterGPU = 0;
   fedCounter =0;
 } // end of produce function
