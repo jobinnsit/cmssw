@@ -178,10 +178,6 @@ int main() {
   uploadDetDB(detDB);
 
   typedef unsigned int uint;
-  pair<uint, vector<Pixel>> mod_cl;
-  vector<pair<uint, vector<Pixel>>> ClusterInfo;
-  std::vector<uint> ClusterId;
-  std::vector<uint> Index;
   ofstream cpetime("CPE_CPU_Time.txt");
   cpetime<<"Event#\t  "<<"Total clusters\t  "<<"Time(us)"<<endl;
   for(int e=1;e<=100;e++) { 
@@ -190,6 +186,7 @@ int main() {
       vector<pair<uint, vector<Pixel>>> ClusterInfo;
       std::vector<uint> ClusterId;
       std::vector<uint> Index;
+      bool bad_cluster = false;
       ifstream input("InputForCPU_CPE/Input_for_CPE_GPU_PartA"+to_string(e)+".txt");
       string str;
       getline(input, str);
@@ -197,6 +194,7 @@ int main() {
 
       while(!input.eof()) {
         input>>index_temp>>clustId;
+        if(clustId==0) bad_cluster=true;
         Index.push_back(index_temp);
         ClusterId.push_back(clustId);
         i++;
@@ -251,10 +249,11 @@ int main() {
         //cout<<setw(4)<<moduleId<<setw(14)<<clustId<<setw(20)<<lp.x()<<setw(20)<<lp.y()<<endl;
         //cout<<lp.x()<<"    "<<lp.y()<<endl; 
       }
-    high_resolution_clock::time_point t2 = high_resolution_clock::now();
-    double mic_sec = duration_cast<microseconds>(t2-t1).count();
-    cpetime<<setw(4)<<e<<setw(12)<<total_cluster<<setw(14)<<mic_sec<<endl;
-    //cout<<"CPE CPU Time(mic. sec): "<<mic_sec<<endl;
+      if(bad_cluster) total_cluster -=1;
+      high_resolution_clock::time_point t2 = high_resolution_clock::now();
+      double mic_sec = duration_cast<microseconds>(t2-t1).count();
+      cpetime<<setw(4)<<e<<setw(12)<<total_cluster<<setw(14)<<mic_sec<<endl;
+      //cout<<"CPE CPU Time(mic. sec): "<<mic_sec<<endl;
   }
 }
 
