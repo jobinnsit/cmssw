@@ -6,7 +6,7 @@ void initDeviceMemory();
 void freeMemory();
 
 // reference cmssw/RecoLocalTracker/SiPixelClusterizer
-// all are runtime const, must be specified in python _cfg.py
+// all are runtime const, should be specified in python _cfg.py
 struct ADCThreshold {
   const int thePixelThreshold = 1000; // default Pixel threshold in electrons
   const int theSeedThreshold = 1000; //seed thershold in electrons not used in our algo

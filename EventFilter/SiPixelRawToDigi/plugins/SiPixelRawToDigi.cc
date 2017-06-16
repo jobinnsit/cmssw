@@ -240,6 +240,104 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
     LogDebug("SiPixelRawToDigi") << "region2unpack #feds: "<<regions_->nFEDs();
     LogDebug("SiPixelRawToDigi") << "region2unpack #modules (BPIX,EPIX,total): "<<regions_->nBarrelModules()<<" "<<regions_->nForwardModules()<<" "<<regions_->nModules();
   }
+  
+   // original for loop
+  //to measure time for RawToDigi Conversion
+
+  static int eventCount=0;
+  eventCount++;
+  using namespace std::chrono;
+  high_resolution_clock:: time_point t1 = high_resolution_clock::now();
+  for (auto aFed = fedIds.begin(); aFed != fedIds.end(); ++aFed) {
+    int fedId = *aFed;
+    //cout<<"FedId: "<<fedId<<endl;
+ 
+    if(!usePilotBlade && (fedId==40) ) continue; // skip pilot blade data
+
+    if (regions_ && !regions_->mayUnpackFED(fedId)) continue;
+
+    if(debug) LogDebug("SiPixelRawToDigi")<< " PRODUCE DIGI FOR FED: " <<  fedId << endl;
+
+    PixelDataFormatter::Errors errors;
+
+    //get event data for this fed
+    const FEDRawData& fedRawData = buffers->FEDData( fedId );
+    //GPU specific
+    
+    //convert data to digi and strip off errors
+    formatter.interpretRawData( errorsInEvent, fedId, fedRawData, *collection, errors);
+   
+    //pack errors into collection
+    if(includeErrors) {
+      typedef PixelDataFormatter::Errors::iterator IE;
+      for (IE is = errors.begin(); is != errors.end(); is++) {
+        uint32_t errordetid = is->first;
+        if (errordetid==dummydetid) {           // errors given dummy detId must be sorted by Fed
+          nodeterrors.insert( nodeterrors.end(), errors[errordetid].begin(), errors[errordetid].end() );
+        } 
+        else {
+          edm::DetSet<SiPixelRawDataError>& errorDetSet = errorcollection->find_or_insert(errordetid);
+          errorDetSet.data.insert(errorDetSet.data.end(), is->second.begin(), is->second.end());
+          // Fill detid of the detectors where there is error AND the error number is listed
+          // in the configurable error list in the job option cfi.
+          // Code needs to be here, because there can be a set of errors for each 
+          // entry in the for loop over PixelDataFormatter::Errors
+          if(!tkerrorlist.empty() || !usererrorlist.empty()){
+            DetId errorDetId(errordetid);
+            edm::DetSet<SiPixelRawDataError>::const_iterator itPixelError=errorDetSet.begin();
+            for(; itPixelError!=errorDetSet.end(); ++itPixelError){
+              // fill list of detIds to be turned off by tracking
+              if(!tkerrorlist.empty()) {
+                std::vector<int>::iterator it_find = find(tkerrorlist.begin(), tkerrorlist.end(), itPixelError->getType());
+               if(it_find != tkerrorlist.end()){
+              tkerror_detidcollection->push_back(errordetid);
+               }
+            }
+              // fill list of detIds with errors to be studied
+          if(!usererrorlist.empty()) {
+            std::vector<int>::iterator it_find = find(usererrorlist.begin(), usererrorlist.end(), itPixelError->getType());
+            if(it_find != usererrorlist.end()){
+            usererror_detidcollection->push_back(errordetid);
+            }
+          }
+         }
+       }
+      }
+     }
+    } // end of includeErrors
+     
+  }  // end of for loop
+
+   high_resolution_clock:: time_point t2 = high_resolution_clock::now();
+   double micro_seconds = duration_cast<microseconds>(t2-t1).count();
+
+  if(includeErrors) {
+    edm::DetSet<SiPixelRawDataError>& errorDetSet = errorcollection->find_or_insert(dummydetid);
+    errorDetSet.data = nodeterrors;
+  }
+  if (errorsInEvent) LogDebug("SiPixelRawToDigi") << "Error words were stored in this event";
+
+  if (theTimer) {
+    theTimer->stop();
+    LogDebug("SiPixelRawToDigi") << "TIMING IS: (real)" << theTimer->realTime() ;
+    ndigis += formatter.nDigis();
+    nwords += formatter.nWords();
+    LogDebug("SiPixelRawToDigi") << " (Words/Digis) this ev: "
+         <<formatter.nWords()<<"/"<<formatter.nDigis() << "--- all :"<<nwords<<"/"<<ndigis;
+    hCPU->Fill( theTimer->realTime() ); 
+    hDigi->Fill(formatter.nDigis());
+  }
+
+  //send digis and errors back to framework 
+  ev.put(std::move(collection));
+  if(includeErrors){
+    ev.put(std::move(errorcollection));
+    ev.put(std::move(tkerror_detidcollection));
+    ev.put(std::move(usererror_detidcollection), "UserErrorModules");
+  }
+
+  //************Header and trailer check for GPU**********
+
   // GPU specific 
   // data extraction for RawToDigi GPU
   unsigned int wordCounterGPU =0;
@@ -305,104 +403,13 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
     }
   }  // end of for loop
   
-
-  // original for loop
- /*
-  for (auto aFed = fedIds.begin(); aFed != fedIds.end(); ++aFed) {
-    int fedId = *aFed;
-    //cout<<"FedId: "<<fedId<<endl;
-    // for GPU
-    // first 150 index stores the fedId and next 150 will store the
-    // start index of word in that fed
-    fedIndex[fedCounter] = fedId-1200;
-    fedIndex[MAX_FED + fedCounter] = wordCounterGPU; // MAX_FED = 150
-    fedCounter++;
-    if(!usePilotBlade && (fedId==40) ) continue; // skip pilot blade data
-
-    if (regions_ && !regions_->mayUnpackFED(fedId)) continue;
-
-    if(debug) LogDebug("SiPixelRawToDigi")<< " PRODUCE DIGI FOR FED: " <<  fedId << endl;
-
-    PixelDataFormatter::Errors errors;
-
-    //get event data for this fed
-    const FEDRawData& fedRawData = buffers->FEDData( fedId );
-    //GPU specific
-    
-    //convert data to digi and strip off errors
-    formatter.interpretRawData( errorsInEvent, fedId, fedRawData, *collection, errors,word, wordCounterGPU);
-   
-    //pack errors into collection
-    if(includeErrors) {
-      typedef PixelDataFormatter::Errors::iterator IE;
-      for (IE is = errors.begin(); is != errors.end(); is++) {
-        uint32_t errordetid = is->first;
-        if (errordetid==dummydetid) {           // errors given dummy detId must be sorted by Fed
-          nodeterrors.insert( nodeterrors.end(), errors[errordetid].begin(), errors[errordetid].end() );
-        } 
-        else {
-          edm::DetSet<SiPixelRawDataError>& errorDetSet = errorcollection->find_or_insert(errordetid);
-          errorDetSet.data.insert(errorDetSet.data.end(), is->second.begin(), is->second.end());
-          // Fill detid of the detectors where there is error AND the error number is listed
-          // in the configurable error list in the job option cfi.
-          // Code needs to be here, because there can be a set of errors for each 
-          // entry in the for loop over PixelDataFormatter::Errors
-          if(!tkerrorlist.empty() || !usererrorlist.empty()){
-            DetId errorDetId(errordetid);
-            edm::DetSet<SiPixelRawDataError>::const_iterator itPixelError=errorDetSet.begin();
-            for(; itPixelError!=errorDetSet.end(); ++itPixelError){
-              // fill list of detIds to be turned off by tracking
-              if(!tkerrorlist.empty()) {
-                std::vector<int>::iterator it_find = find(tkerrorlist.begin(), tkerrorlist.end(), itPixelError->getType());
-               if(it_find != tkerrorlist.end()){
-              tkerror_detidcollection->push_back(errordetid);
-               }
-            }
-              // fill list of detIds with errors to be studied
-          if(!usererrorlist.empty()) {
-            std::vector<int>::iterator it_find = find(usererrorlist.begin(), usererrorlist.end(), itPixelError->getType());
-            if(it_find != usererrorlist.end()){
-            usererror_detidcollection->push_back(errordetid);
-            }
-          }
-         }
-       }
-      }
-     }
-    } // end of includeErrors
-     
-  }  // end of for loop
- */ 
-  /*
-  if(includeErrors) {
-    edm::DetSet<SiPixelRawDataError>& errorDetSet = errorcollection->find_or_insert(dummydetid);
-    errorDetSet.data = nodeterrors;
-  }
-  if (errorsInEvent) LogDebug("SiPixelRawToDigi") << "Error words were stored in this event";
-
-  if (theTimer) {
-    theTimer->stop();
-    LogDebug("SiPixelRawToDigi") << "TIMING IS: (real)" << theTimer->realTime() ;
-    ndigis += formatter.nDigis();
-    nwords += formatter.nWords();
-    LogDebug("SiPixelRawToDigi") << " (Words/Digis) this ev: "
-         <<formatter.nWords()<<"/"<<formatter.nDigis() << "--- all :"<<nwords<<"/"<<ndigis;
-    hCPU->Fill( theTimer->realTime() ); 
-    hDigi->Fill(formatter.nDigis());
-  }
-
-  //send digis and errors back to framework 
-  ev.put(std::move(collection));
-  if(includeErrors){
-    ev.put(std::move(errorcollection));
-    ev.put(std::move(tkerror_detidcollection));
-    ev.put(std::move(usererror_detidcollection), "UserErrorModules");
-  }
-  */
+   ofstream timeFile;
+   timeFile.open("R2D_CPU_Time.txt", ios::out | ios::app); 
+   if(eventCount==1) timeFile<<"Event#\t Total Pixel\tTime(us)"<<endl;
+   timeFile<<setw(3)<<eventCount<<setw(10)<<wordCounterGPU<<setw(14)<<micro_seconds<<endl;
+   timeFile.close();
   //GPU specific
  
-  static int eventCount=0;
-  eventCount++;
   //cout<<"Event: "<<setw(4)<<eventCount<<"  Total Hits: "<<setw(8)<<wordCounterGPU<<endl;
   // following code is to extract the Raw data put it to ascii file and pass it to
   // standalone RawToDigi

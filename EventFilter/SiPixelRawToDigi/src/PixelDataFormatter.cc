@@ -127,7 +127,7 @@ void PixelDataFormatter::passFrameReverter(const SiPixelFrameReverter* reverter)
   theFrameReverter = reverter;
 }
 
-void PixelDataFormatter::interpretRawData(bool& errorsInEvent, int fedId, const FEDRawData& rawData, Collection & digis, Errors& errors, Word32 *wordGPU, Word32& wordCounterGPU)
+void PixelDataFormatter::interpretRawData(bool& errorsInEvent, int fedId, const FEDRawData& rawData, Collection & digis, Errors& errors)
 {
   using namespace sipixelobjects;
   
@@ -136,7 +136,7 @@ void PixelDataFormatter::interpretRawData(bool& errorsInEvent, int fedId, const 
   //if(fedId==1200) {wordFile<<"fedId\t"<<"RawId\t"<<"xx\t"<<"yy\t"<<"adc"<<endl;}
   int nWords = rawData.size()/sizeof(Word64);
   if (nWords==0) {
-    wordGPU[wordCounterGPU++] =0;
+    //wordGPU[wordCounterGPU++] =0;
 	// for testing purpose only
 	  //wordFile<<setw(6)<<fedId<<setw(14)<<9999<<setw(6)<<0<<setw(6)<<0<<setw(6)<<0<<endl;
     return;
@@ -188,7 +188,7 @@ void PixelDataFormatter::interpretRawData(bool& errorsInEvent, int fedId, const 
     auto ww = *word;
     //GPU specific
 	  //cout<<fedId<<"\t\t"<<ww<<endl;
-    wordGPU[wordCounterGPU++] = *word;
+    //wordGPU[wordCounterGPU++] = *word;
     if unlikely(ww==0) {
 	    theWordCounter--;
 	    //wordFile<<setw(6)<<fedId<<setw(14)<<9999<<setw(6)<<0<<setw(6)<<0<<setw(6)<<0<<endl;

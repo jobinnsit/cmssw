@@ -371,15 +371,14 @@ void sub_cluster(uint *d_xx, uint *d_yy,const uint *d_ADC, uint *d_Index, uint *
 
   // sort the cluster id by key
   thrust::sort_by_key(gClusterId , gClusterId + wordCounter, Index);
-  cudaDeviceSynchronize();
-  
+ 
   cudaMemcpy(d_gClusterId1, d_gClusterId, wordCounter * sizeof(uint),  cudaMemcpyDeviceToDevice );
 
   // launch kernel for sorting xx[] and yy[]
   uint N_threads = 1024;
   uint N_blocks  = wordCounter / N_threads +1;
   copy_kernel<<<N_blocks,N_threads>>>(d_Index, d_xx, d_yy,d_ADC, wordCounter,d_xx1,d_yy1,d_ADC1); 
-  cudaDeviceSynchronize();
+
   checkCUDAError("Error in copy kernel");
   
   // removes the consecutive duplicate
@@ -393,7 +392,6 @@ void sub_cluster(uint *d_xx, uint *d_yy,const uint *d_ADC, uint *d_Index, uint *
   new_end = thrust::unique_by_key(gClusterId , gClusterId + wordCounter, Index );
   total_cluster = new_end.first - gClusterId;
   checkCUDAError(" Failed after unique operation");
-  cudaDeviceSynchronize();
  
   //launch the kernel for subdivision
   dim3 no_threads =  80; // maximum size of cluster found after analysis
@@ -501,6 +499,10 @@ __global__ void cluster_kernel(uint *xx, uint *yy, const int *mIndexStart,
 
 } //End of cluster_kernel
 
+__global__ void init_kernel(const uint wordCounter, const uint total_cluster, uint *Index) {
+  Index[total_cluster] = wordCounter;
+}
+
 /************* origin of call to the kernel***************/
 
 void PixelCluster_Wrapper(uint *d_xx, uint *d_yy, uint *d_ADC,const uint wordCounter,
@@ -509,6 +511,12 @@ void PixelCluster_Wrapper(uint *d_xx, uint *d_yy, uint *d_ADC,const uint wordCou
     checkCUDAError("Error in RawToDigi, didn't enter in Cluster");    
     
     cout<<"Clustering started on GPU!"<<endl;
+    //to measure the time
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start);
 
     cudaMemset(d_gClusterId, 0, wordCounter*sizeof(uint));
     checkCUDAError("Error in setting memory to 0");
@@ -521,7 +529,7 @@ void PixelCluster_Wrapper(uint *d_xx, uint *d_yy, uint *d_ADC,const uint wordCou
     cudaDeviceSynchronize();
     checkCUDAError(" Failed after main kernel call");
     
-    cout<<"Finding Sub-clusters..."<<endl;
+    //cout<<"Finding Sub-clusters..."<<endl;
     sub_cluster(d_xx, d_yy, d_ADC, Index, d_gClusterId, wordCounter, d_gClusterId1, d_xx1, d_yy1, d_ADC1);
     
     // FOR CPE
@@ -549,40 +557,69 @@ void PixelCluster_Wrapper(uint *d_xx, uint *d_yy, uint *d_ADC,const uint wordCou
     new_end = thrust::unique_by_key(ClusterId_ptr , ClusterId_ptr + wordCounter, Index_ptr );
     total_cluster = new_end.first - ClusterId_ptr;
     checkCUDAError(" Failed at Clustering");
-    cout<<"Total_clusters after sub-clustering: "<<total_cluster<<endl;
-    cout<<"Clustering finished on GPU!"<<endl;
+    //cout<<"Total_clusters after sub-clustering: "<<total_cluster<<endl;
+    //cout<<"Clustering finished on GPU!"<<endl;
     // call CPE function
-    Index[total_cluster] = wordCounter;
+    init_kernel<<<1,1>>>(wordCounter, total_cluster, Index);
+    //Index[total_cluster] = wordCounter;
     //since origin is shifted by (1,1) move it back to (0,0) before giving it CPE
     shift_origin_kernel<<<N_blocks, N_threads>>>(wordCounter,d_xx,d_yy); 
     cudaDeviceSynchronize();
-    CPE_wrapper(total_cluster,d_gClusterId1, Index, d_xx, d_yy, d_ADC);
+    
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    float microseconds = milliseconds*1000;
 
-  /*  
+    ofstream GPUTime("Cluster_GPU_Time.txt",ios::out | ios::app);
+    static int eventNo = 1;
+    cout<<"Event "<<eventNo<<endl;
+    if (eventNo==1) {
+      GPUTime<<"Event#\t  "<<"Total pixel\t  "<<"Time(us)"<<endl;
+    }
+    GPUTime<<setw(4)<<eventNo<<setw(12)<<wordCounter<<setw(14)<<microseconds<<endl;
+    
+    GPUTime.close();
+    uint *xx, *yy, *adc_h, *gClusterId, *index_h;
+    xx = (uint*)malloc(wordCounter*sizeof(uint));
+    yy = (uint*)malloc(wordCounter*sizeof(uint));
+    adc_h = (uint*)malloc(wordCounter*sizeof(uint));
+    gClusterId = (uint*)malloc(wordCounter*sizeof(uint));
+    index_h = (uint*)malloc(wordCounter*sizeof(uint));
     int count = wordCounter*sizeof(uint);
     cudaMemcpy(xx, d_xx,count , cudaMemcpyDeviceToHost);
     cudaMemcpy(yy, d_yy,count , cudaMemcpyDeviceToHost);
     cudaMemcpy(gClusterId, d_gClusterId1, count , cudaMemcpyDeviceToHost);
     cudaMemcpy(adc_h, d_ADC, count, cudaMemcpyDeviceToHost);
+    cudaMemcpy(index_h, Index, count, cudaMemcpyDeviceToHost);
     cudaDeviceSynchronize();
 
     ofstream cfile;
-    cfile.open("Input_for_CPE_GPU_PartA.txt");
+    cfile.open("Input_for_CPE_GPU_PartA"+to_string(eventNo)+".txt");
     cfile<<"Index\tClusterId"<<endl;
     for (int i = 0; i < total_cluster; i++) {
       //cfile<<setw(10)<<gClusterId[i]<<setw(6)<<xx[i]<<setw(6)<<yy[i]<<setw(10)<<adc_h[i]<<endl;
-      cfile<<setw(6)<<Index[i]<<setw(14)<<gClusterId[i]<<endl;
+      cfile<<setw(6)<<index_h[i]<<setw(14)<<gClusterId[i]<<endl;
     }
     cfile.close();
-     cudaMemcpy(gClusterId, d_gClusterId, count , cudaMemcpyDeviceToHost);
-    cfile.open("Input_for_CPE_GPU_PartB.txt");
+    cudaMemcpy(gClusterId, d_gClusterId, count , cudaMemcpyDeviceToHost);
+    cfile.open("Input_for_CPE_GPU_PartB"+to_string(eventNo)+".txt");
     cfile<<"ClusterId\t\txx\tyy\tADC"<<endl;
     for (int i = 0; i < wordCounter; i++) {
       //cfile<<setw(10)<<gClusterId[i]<<setw(6)<<xx[i]<<setw(6)<<yy[i]<<setw(10)<<adc_h[i]<<endl;
       cfile<<setw(6)<<i<<setw(14)<<gClusterId[i]<<setw(6)<<xx[i]<<setw(6)<<yy[i]<<setw(10)<<adc_h[i]<<endl;
     }
     cfile.close();
-  */  
+    eventNo++;
+    free(xx);
+    free(yy);
+    free(adc_h);
+    free(gClusterId);
+    free(index_h);
+    CPE_wrapper(total_cluster,d_gClusterId1, Index, d_xx, d_yy, d_ADC);
+
+  
     // move it into destructor
     
 } //end of pixel clusterizer
@@ -591,7 +628,7 @@ void initDeviceMemCluster() {
     const int MAX_FED = 150; // not all are present typically 108
     const int MAX_WORD = 2000; // don't know the exact max word, for PU70 max was 2900
     const int size = MAX_FED*MAX_WORD*sizeof(uint);
-    cudaMallocManaged((void**)&Index , size*sizeof(uint));
+    cudaMalloc((void**)&Index , size*sizeof(uint));
     checkCUDAError("Error in unified memory allocation");
     cudaMalloc((void**)&d_xx1, size*sizeof(uint));
     cudaMalloc((void**)&d_yy1, size*sizeof(uint));

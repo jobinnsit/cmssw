@@ -378,7 +378,7 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
     int gIndex = begin + threadId + i*blockDim.x;  
     if(gIndex <end) {
       //rare condition 
-      if(moduleId[gIndex]==moduleId[gIndex+2] && moduleId[gIndex]<moduleId[gIndex+1]) {
+      if(moduleId[gIndex]<moduleId[gIndex+1] && moduleId[gIndex]==moduleId[gIndex+2]) {
         atomicExch(&moduleId[gIndex+2], atomicExch(&moduleId[gIndex+1], moduleId[gIndex+2]));
         //*swap all the digi id
         atomicExch(&XX[gIndex+2], atomicExch(&XX[gIndex+1], XX[gIndex+2]));
@@ -390,7 +390,7 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
       //rarest condition
       // above condition fails at 361 361 361 363 362 363 363
       // here we need to swap 362 with previous 363
-      if(moduleId[gIndex]==moduleId[gIndex+2] && moduleId[gIndex]>moduleId[gIndex+1]) {
+      if(moduleId[gIndex]>moduleId[gIndex+1] && moduleId[gIndex]==moduleId[gIndex+2]) {
         atomicExch(&moduleId[gIndex+1], atomicExch(&moduleId[gIndex], moduleId[gIndex+1]));
         //*swap all the digi id
         atomicExch(&XX[gIndex+1], atomicExch(&XX[gIndex], XX[gIndex+1]));
@@ -429,7 +429,7 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
         mIndexEnd[moduleId[gIndex]] = gIndex;
       }   
       // point to the gIndex where two consecutive moduleId varies
-      if(gIndex!= begin && (gIndex<(end-1)) && moduleId[gIndex]!=9999) {
+      if((gIndex!= begin && gIndex<(end-1)) && moduleId[gIndex]!=9999) {
         if(moduleId[gIndex]<moduleId[gIndex+1] ) {
           mIndexEnd[moduleId[gIndex]] = gIndex;
         }
@@ -439,7 +439,7 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
       } //end of if(gIndex!= begin && (gIndex<(end-1)) ...  
     } //end of if(gIndex <end) 
   }
-  
+
 } // end of Raw to Digi kernel
 
 // kernel wrapper called from runRawToDigi_kernel
@@ -447,6 +447,11 @@ void RawToDigi_kernel_wrapper(const uint wordCounter,uint *word,const uint fedCo
   
  
   cout<<"Inside RawToDigi , total words: "<<wordCounter<<endl;
+  cudaEvent_t start, stop;
+  cudaEventCreate(&start);
+  cudaEventCreate(&stop);
+   
+  cudaEventRecord(start);
   int nBlocks = fedCounter; // =108
   int threads = 512; //
   fedIndex[MAX_FED+nBlocks] = wordCounter;
@@ -464,32 +469,20 @@ void RawToDigi_kernel_wrapper(const uint wordCounter,uint *word,const uint fedCo
                                         mIndexStart_d, mIndexEnd_d, adc_d,layer_d);
   cudaDeviceSynchronize();
   checkCUDAError("Error in RawToDigi_kernel");
-  /*
-  uint size = wordCounter*sizeof(uint);
-  uint *xx,*yy,*adc,*fedId,*moduleId;
-  xx = (uint*)malloc(wordCounter*sizeof(uint));
-  yy = (uint*)malloc(wordCounter*sizeof(uint));
-  adc = (uint*)malloc(wordCounter*sizeof(uint));
-  fedId = (uint*)malloc(wordCounter*sizeof(uint));
-  moduleId = (uint*)malloc(wordCounter*sizeof(uint));
-  cudaMemcpy(xx,xx_d, size, cudaMemcpyDeviceToHost);
-  cudaMemcpy(yy,yy_d, size, cudaMemcpyDeviceToHost);
-  cudaMemcpy(adc,adc_d, size, cudaMemcpyDeviceToHost);
-  cudaMemcpy(fedId,layer_d, size, cudaMemcpyDeviceToHost);
-  cudaMemcpy(moduleId,moduleId_d, size, cudaMemcpyDeviceToHost);
-  //ofstream r2d("R2D_debug_fedId_xyadc_moduleId.txt");
-  ofstream R2D("R2D_GPU_v1.txt");
-  R2D<<setw(6)<<"fedId"<<setw(14)<<"RawId"<<setw(6)<<"xx"<<setw(6)<<"yy"<<setw(6)<<"adc"<<endl;
-  for(int i=0;i<wordCounter;i++) {
-    R2D<<setw(6)<<fedId[i]+1200<<setw(14)<<moduleId[i]<<setw(6)<<xx[i]<<setw(6)<<yy[i]<<setw(6)<<adc[i]<<endl;
+  cudaEventRecord(stop);
+  cudaEventSynchronize(stop);
+  float milliseconds = 0;
+  cudaEventElapsedTime(&milliseconds, start, stop);
+  // to record time
+
+  static int eventno = 1;
+  ofstream timeFile;
+  timeFile.open("R2D_GPU_Time.txt", ios::out | ios::app);
+  if(eventno==1) {
+    timeFile<<"Event#   Total pixel    Time(us)"<<endl;
   }
-  R2D.close();
-  free(xx);
-  free(yy);
-  free(adc);
-  free(fedId);
-  free(moduleId); 
-  */ 
+  timeFile<<setw(4)<<eventno<<setw(14)<<wordCounter<<setw(14)<<milliseconds*1000<<endl;
+  timeFile.close();
   //---- Prepare the input for clustering----------
   
   // This correction can be done during clustering also
@@ -524,6 +517,47 @@ void RawToDigi_kernel_wrapper(const uint wordCounter,uint *word,const uint fedCo
   //copy te data back to the device memory
   cudaMemcpy(mIndexStart_d, mIndexStart, mSize, cudaMemcpyHostToDevice);
   cudaMemcpy(mIndexEnd_d,   mIndexEnd,   mSize, cudaMemcpyHostToDevice);
+
+  // to store the input for standalone clustering program
+  
+  uint size = wordCounter*sizeof(uint);
+  uint *xx,*yy;//,*adc,*fedId,*moduleId;
+  xx = (uint*)malloc(wordCounter*sizeof(uint));
+  yy = (uint*)malloc(wordCounter*sizeof(uint));
+  //adc = (uint*)malloc(wordCounter*sizeof(uint));
+  //fedId = (uint*)malloc(wordCounter*sizeof(uint));
+  //moduleId = (uint*)malloc(wordCounter*sizeof(uint));
+  cudaMemcpy(xx,xx_d, size, cudaMemcpyDeviceToHost);
+  cudaMemcpy(yy,yy_d, size, cudaMemcpyDeviceToHost);
+  //cudaMemcpy(adc,adc_d, size, cudaMemcpyDeviceToHost);
+  //cudaMemcpy(fedId,layer_d, size, cudaMemcpyDeviceToHost);
+  //cudaMemcpy(moduleId,moduleId_d, size, cudaMemcpyDeviceToHost);
+  //ofstream r2d("R2D_debug_fedId_xyadc_moduleId.txt");
+  ofstream outFile;
+  outFile.open("ClusterInput_CPU_evt"+to_string(eventno)+".txt");
+  outFile<<"xx"<<"\tyy"<<endl;  
+  for(uint i=0; i<wordCounter;i++) {
+    outFile <<setw(6)<<xx[i]<<setw(6)<<yy[i]<<setw(6)<<endl;
+  }                                                                                               
+  outFile.close();
+  
+  ofstream mse("ModuleStartEndIndex_evt"+to_string(eventno)+".txt");
+  mse<<"ModuleId\t"<<"ModuleStartIndex\t"<<"ModuleEndIndex"<<endl;
+  for(int i=0;i<totalModule;i++) {
+    mse<<setw(4)<<i<<setw(8)<<mIndexStart[i]<<setw(8)<<mIndexEnd[i]<<endl;
+    //cout<<mIndexStart[i]<<"\t\t"<<mIndexEnd[i]<<endl;
+  }
+  mse.close();
+                                          
+  ++eventno;
+
+  free(xx);
+  free(yy);
+  //free(adc);
+  //free(fedId);
+  //free(moduleId); 
+  cudaEventDestroy(start);
+  cudaEventDestroy(stop);
   
   checkCUDAError("Error in memcpy for moduleStart_end H2D");
   // kernel to apply adc threashold on the channel

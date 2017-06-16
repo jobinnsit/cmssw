@@ -205,23 +205,35 @@ void CPE_wrapper(const uint total_cluster, const uint *ClusterId, const uint *In
 {
   cout<<"Inside CPE..."<<endl;
   // to measure the time
-  //cudaEvent_t start, stop;
-  //cudaEventCreate(&start);
-  //cudaEventCreate(&stop);
-  //float time_ms = 0.0f;
+  cudaEvent_t start, stop;
+  cudaEventCreate(&start);
+  cudaEventCreate(&stop);
+  float time_ms = 0.0f;
   // upload the CPE database
   
-  //cudaEventRecord(start);
+  cudaEventRecord(start);
   CPE_cut_Param cpe_cut;
   int no_blocks = total_cluster;
   int no_threads = 2;
   // xhit_d, yhit_d, contains output
   CPE_kernel<<<no_blocks, no_threads>>>(cpe_cut,detDB,ClusterId, Index, xx, yy, adc, xhit_d, yhit_d); 
   cudaDeviceSynchronize();
-  //cudaEventRecord(stop);
-  //cudaEventSynchronize(stop);
+  cudaEventRecord(stop);
+  cudaEventSynchronize(stop);
   
-  //cudaEventElapsedTime(&time_ms, start, stop);
+  cudaEventElapsedTime(&time_ms, start, stop);
+  ofstream GPUTime("CPE_GPU_Time.txt",ios::out | ios::app);
+  static int eventNo = 1;
+  cout<<"Event "<<eventNo<<endl;
+  if (eventNo==1) {
+    GPUTime<<"Event#\t  "<<"Total clusters\t  "<<"Time(us)"<<endl;
+  }
+  GPUTime<<setw(4)<<eventNo<<setw(12)<<total_cluster<<setw(14)<<time_ms*1000<<endl;
+   
+  GPUTime.close();
+  eventNo++;
+  cudaEventDestroy(start);
+  cudaEventDestroy(stop);
   //cout<<"CPE GPU Time(micro sec.):  "<<time_ms*1000<<endl;
   checkCUDAError("Error in CPE_kernel");
   cout<<"CPE kernel execution finished!\n";
