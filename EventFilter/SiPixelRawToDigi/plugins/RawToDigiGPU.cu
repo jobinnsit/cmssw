@@ -84,9 +84,7 @@ void initDeviceMemory() {
   
 
   int mSize = totalModule*sizeof(int);
-  mIndexStart = (int*)malloc(mSize); 
-  mIndexEnd = (int*)malloc(mSize);
- 
+
   cudaMalloc((void**)&word_d,       MAX_WORD_SIZE);
   cudaMalloc((void**)&fedIndex_d,   2*(MAX_FED+1)*sizeof(uint));
   cudaMalloc((void**)&xx_d,         MAX_WORD_SIZE); // to store the x and y coordinate
@@ -110,8 +108,6 @@ void freeMemory() {
 
   //GPU specific
  
-  free(mIndexStart);
-  free(mIndexEnd);
   cudaFree(word_d);
   cudaFree(fedIndex_d);
   cudaFree(adc_d);
@@ -490,41 +486,7 @@ void RawToDigi_kernel_wrapper(const uint wordCounter,uint *word,const uint fedCo
   free(fedId);
   free(moduleId); 
   */ 
-  //---- Prepare the input for clustering----------
-  
-  // This correction can be done during clustering also
 
-  // apply the correction to the moduleStart & moduleEnd
-  // if module contains only one pixel then either moduleStart 
-  // or moduleEnd is not updated(remains 9999) in RawToDigi kernel
-  // ex. moduleStart[1170] =9999 & moduleEnd[1170] = 34700
-  // because of 1 pixel moduleStart[1170] didn't update
-  // as per the if condition
-  
-  // before finding the cluster 
-  
-  cudaMemcpy(mIndexStart, mIndexStart_d, mSize, cudaMemcpyDeviceToHost);
-  cudaMemcpy(mIndexEnd,   mIndexEnd_d,   mSize, cudaMemcpyDeviceToHost);
-  checkCUDAError("Error in memcpy for moduleStart_end D2H");
-  for(int i=0;i<totalModule;i++) {
-    // if module is empty then index are not updated in kernel
-    if(mIndexStart[i]==-1 && mIndexEnd[i]==-1) {
-      mIndexStart[i]=0;
-       mIndexEnd[i]=0;
-    }
-    else if(mIndexStart[i]==-1) {
-      mIndexStart[i] = mIndexEnd[i];
-    }
-    else if(mIndexEnd[i]==-1) {
-      mIndexEnd[i] = mIndexStart[i];
-    }
-    //cout<<"moduleId: "<<i<<" moduleStart[i]: "<<mIndexStart[i]<<" moduleEnd: "<<mIndexEnd[i]<<endl;
-  }
-
-  //copy te data back to the device memory
-  cudaMemcpy(mIndexStart_d, mIndexStart, mSize, cudaMemcpyHostToDevice);
-  cudaMemcpy(mIndexEnd_d,   mIndexEnd,   mSize, cudaMemcpyHostToDevice);
-  
   checkCUDAError("Error in memcpy for moduleStart_end H2D");
   // kernel to apply adc threashold on the channel
   ADCThreshold adcThreshold;

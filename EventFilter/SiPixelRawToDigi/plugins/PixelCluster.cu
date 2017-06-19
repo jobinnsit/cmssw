@@ -24,6 +24,11 @@
 * Fixed bug in sub-clustering, if X- coordinate differs by more
 * than blockDim.x then extra clusters were formed. Now it is fixed 
 * by iterating upto xmax limit.
+* 
+* -------change lof---------
+* Date 19/06/2017
+* Apply the module correction in cluster kernel itself
+* earlier it was done in RawToDigi
 */ 
 // System includes
 #include <stdio.h>
@@ -371,7 +376,6 @@ void sub_cluster(uint *d_xx, uint *d_yy,const uint *d_ADC, uint *d_Index, uint *
 
   // sort the cluster id by key
   thrust::sort_by_key(gClusterId , gClusterId + wordCounter, Index);
-  cudaDeviceSynchronize();
   
   cudaMemcpy(d_gClusterId1, d_gClusterId, wordCounter * sizeof(uint),  cudaMemcpyDeviceToDevice );
 
@@ -393,7 +397,6 @@ void sub_cluster(uint *d_xx, uint *d_yy,const uint *d_ADC, uint *d_Index, uint *
   new_end = thrust::unique_by_key(gClusterId , gClusterId + wordCounter, Index );
   total_cluster = new_end.first - gClusterId;
   checkCUDAError(" Failed after unique operation");
-  cudaDeviceSynchronize();
  
   //launch the kernel for subdivision
   dim3 no_threads =  80; // maximum size of cluster found after analysis
@@ -414,18 +417,20 @@ void sub_cluster(uint *d_xx, uint *d_yy,const uint *d_ADC, uint *d_Index, uint *
 __global__ void cluster_kernel(uint *xx, uint *yy, const int *mIndexStart,
                                const int *mIndexEnd, uint *gClusterId) 
 {
-
   __shared__ uint xp[MAX_X+1], yp[MAX_Y+1];   // Array to store x and y projection
   uint moduleId = blockIdx.x;                 // to get block id
   uint tid = threadIdx.x;                     // to get thread id
-  uint moduleBegin = mIndexStart[moduleId];
-  uint moduleEnd   = mIndexEnd[moduleId];
-  if(tid==0) {
-    //printf("moduleId: %d  mstart: %d  mend: %d\n",moduleId, moduleBegin, moduleEnd);
+  int  moduleBegin, moduleEnd;
+  
+  moduleBegin = mIndexStart[moduleId];
+  moduleEnd   = mIndexEnd[moduleId];
+  
+  if(moduleBegin==-1 && moduleEnd==-1) return;
+  if(moduleBegin==-1) {
+    moduleBegin = moduleEnd;
   }
-  // Module empty 
-  if((moduleBegin==0 && moduleEnd==0 ) ) {
-    return;
+  if(moduleEnd==-1) {
+    moduleEnd = moduleBegin;
   }
   //module contains only one pixel
   if(moduleBegin==moduleEnd) {
