@@ -187,7 +187,7 @@ int main() {
       std::vector<uint> ClusterId;
       std::vector<uint> Index;
       bool bad_cluster = false;
-      ifstream input("InputForCPU_CPE/Input_for_CPE_GPU_PartA"+to_string(e)+".txt");
+      ifstream input("InputForCPU_CPE/CPE_Input_CPU_PartA"+to_string(e)+".txt");
       string str;
       getline(input, str);
       uint index_temp, clustId=0 ,i=0;
@@ -205,7 +205,7 @@ int main() {
 
       uint xx, yy, adc;
       uint pre_clustId = ClusterId[0];
-      input.open("InputForCPU_CPE/Input_for_CPE_GPU_PartB"+to_string(e)+".txt");
+      input.open("InputForCPU_CPE/CPE_Input_CPU_PartB"+to_string(e)+".txt");
       getline(input, str);
       std::vector<Pixel> v;
       Pixel p;

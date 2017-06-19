@@ -59,7 +59,7 @@ int main(int argc, char **argv) {
   for(int Event=1;Event<101;Event++) {
 
     ifstream ifile;
-    ifile.open("InputForCPU_Cluster/ClusterInput_CPU_evt"+to_string(Event)+".txt");
+    ifile.open("InputForCPU_Cluster/Cluster_Input_CPU_evt"+to_string(Event)+".txt");
     string str;
     getline(ifile, str);
     uint x, y, i=0;

@@ -534,7 +534,7 @@ void RawToDigi_kernel_wrapper(const uint wordCounter,uint *word,const uint fedCo
   //cudaMemcpy(moduleId,moduleId_d, size, cudaMemcpyDeviceToHost);
   //ofstream r2d("R2D_debug_fedId_xyadc_moduleId.txt");
   ofstream outFile;
-  outFile.open("ClusterInput_CPU_evt"+to_string(eventno)+".txt");
+  outFile.open("Cluster_Input_CPU_evt"+to_string(eventno)+".txt");
   outFile<<"xx"<<"\tyy"<<endl;  
   for(uint i=0; i<wordCounter;i++) {
     outFile <<setw(6)<<xx[i]<<setw(6)<<yy[i]<<setw(6)<<endl;
