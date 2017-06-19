@@ -56,7 +56,7 @@ int main(int argc, char **argv) {
   for(int Event=0;Event<1;Event++) {
 
     ifstream ifile;
-    ifile.open("ClusterInput_CPU.txt");
+    ifile.open("Cluster_Input_CPU.txt");
     string str;
     getline(ifile, str);
     uint x, y, i=0;

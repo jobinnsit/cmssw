@@ -237,7 +237,7 @@ void CPE_wrapper(const uint total_cluster, const uint *ClusterId, const uint *In
   cudaMemcpy(xhit, xhit_d, total_cluster*sizeof(float), cudaMemcpyDeviceToHost);
   cudaMemcpy(yhit, yhit_d, total_cluster*sizeof(float), cudaMemcpyDeviceToHost);
   cudaMemcpy(ClusterId_h, ClusterId, total_cluster*sizeof(uint), cudaMemcpyDeviceToHost);
-  ofstream cpeFile("CPE_GPU_Output.txt");
+  ofstream cpeFile("CPE_GPU.txt");
   cpeFile<<"moduleId   "<<"clusterId   "<<" xhit   "<<"  yhit  "<<endl;
   for (int i = 0; i <total_cluster; i++) {
     //cout<<xhit[i]<<setw(12)<<yhit[i]<<endl;

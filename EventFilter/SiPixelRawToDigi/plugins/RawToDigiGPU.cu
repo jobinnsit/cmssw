@@ -522,7 +522,7 @@ void RawToDigi_kernel_wrapper(const uint wordCounter,uint *word,const uint fedCo
   cudaMemcpy(xx,xx_d,wordCounter*sizeof(uint),cudaMemcpyDeviceToHost);
   cudaMemcpy(yy,yy_d, wordCounter*sizeof(uint), cudaMemcpyDeviceToHost);
    ofstream outFile;
-   outFile.open("ClusterInput_CPU.txt");
+   outFile.open("Cluster_Input_CPU.txt");
    outFile<<"xx"<<"\tyy"<<endl;  
    for(uint i=0; i<wordCounter;i++) {
      //if(RawId[i]!=0)

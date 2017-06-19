@@ -185,7 +185,7 @@ int main() {
   vector<pair<uint, vector<Pixel>>> ClusterInfo;
   std::vector<uint> ClusterId;
   std::vector<uint> Index; 
-  ifstream input("Input_for_CPE_GPU_PartA.txt");
+  ifstream input("CPE_Input_CPU_PartA.txt");
   string str;
   getline(input, str);
   uint index_temp, clustId=0 ,i=0;
@@ -202,7 +202,7 @@ int main() {
   
   uint xx, yy, adc;
   uint pre_clustId = ClusterId[0];
-  input.open("Input_for_CPE_GPU_PartB.txt");
+  input.open("CPE_Input_CPU_PartB.txt");
   getline(input, str);
   std::vector<Pixel> v;
   Pixel p;
@@ -230,7 +230,7 @@ int main() {
   i = 0;
  // for each cluster call the cpe function
  using namespace chrono;
- ofstream cpeFile("CPE_CPU_Output.txt");
+ ofstream cpeFile("CPE_CPU.txt");
  cpeFile<<"moduleId\t clusterId\t xhit\t yhit"<<endl;
  high_resolution_clock::time_point t1 = high_resolution_clock::now();
  for(auto itm = ClusterInfo.begin(); itm!=ClusterInfo.end(); itm++) {  // for each module

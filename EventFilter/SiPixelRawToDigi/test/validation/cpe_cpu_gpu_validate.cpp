@@ -22,8 +22,8 @@ int main(void){
 
   int clusterId, module;
   float xhit, yhit;
-  ifstream icpu("CPE_CPU_Output.txt");
-  ifstream igpu("CPE_GPU_Output.txt");
+  ifstream icpu("CPE_CPU.txt");
+  ifstream igpu("CPE_GPU.txt");
   string str;
   getline(icpu, str);
   getline(igpu,str);

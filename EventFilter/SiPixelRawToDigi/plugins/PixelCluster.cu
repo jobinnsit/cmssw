@@ -582,7 +582,7 @@ void PixelCluster_Wrapper(uint *d_xx, uint *d_yy, uint *d_ADC,const uint wordCou
     cudaDeviceSynchronize();
 
     ofstream cfile, cluster_out;
-    cfile.open("Input_for_CPE_GPU_PartA.txt");
+    cfile.open("CPE_Input_CPU_PartA.txt");
     cfile<<"Index\tClusterId"<<endl;
     for (int i = 0; i < total_cluster; i++) {
       //cfile<<setw(10)<<gClusterId[i]<<setw(6)<<xx[i]<<setw(6)<<yy[i]<<setw(10)<<adc_h[i]<<endl;
@@ -590,7 +590,7 @@ void PixelCluster_Wrapper(uint *d_xx, uint *d_yy, uint *d_ADC,const uint wordCou
     }
     cfile.close();
      cudaMemcpy(gClusterId, d_gClusterId, count , cudaMemcpyDeviceToHost);
-    cfile.open("Input_for_CPE_GPU_PartB.txt");
+    cfile.open("CPE_Input_CPU_PartB.txt");
     cluster_out.open("Cluster_GPU.txt");
     cluster_out<<"clusterId\t\t"<<"XX\t"<<"YY"<<endl;
     cfile<<"Index\tClusterId\t\txx\tyy\tADC"<<endl;
