@@ -418,15 +418,25 @@ __global__ void cluster_kernel(uint *xx, uint *yy, const int *mIndexStart,
   __shared__ uint xp[MAX_X+1], yp[MAX_Y+1];   // Array to store x and y projection
   uint moduleId = blockIdx.x;                 // to get block id
   uint tid = threadIdx.x;                     // to get thread id
-  uint moduleBegin = mIndexStart[moduleId];
-  uint moduleEnd   = mIndexEnd[moduleId];
-  if(tid==0) {
+  int  moduleBegin, moduleEnd;
+  
+  moduleBegin = mIndexStart[moduleId];
+  moduleEnd   = mIndexEnd[moduleId];
+  
+  if(moduleBegin==-1 && moduleEnd==-1) return;
+  if(moduleBegin==-1) {
+    moduleBegin = moduleEnd;
+  }
+  if(moduleEnd==-1) {
+    moduleEnd = moduleBegin;
+  }
+  //if(tid==0) {
     //printf("moduleId: %d  mstart: %d  mend: %d\n",moduleId, moduleBegin, moduleEnd);
-  }
-  // Module empty 
-  if((moduleBegin==0 && moduleEnd==0 ) ) {
-    return;
-  }
+  //}
+  // Module empty (module correction applied in RawToDigi)
+  //if((moduleBegin==0 && moduleEnd==0 ) ) {
+    //return;
+  //}
   //module contains only one pixel
   if(moduleBegin==moduleEnd) {
     int px = xx[moduleBegin];

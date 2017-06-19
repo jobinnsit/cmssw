@@ -464,7 +464,7 @@ void RawToDigi_kernel_wrapper(const uint wordCounter,uint *word,const uint fedCo
                                         mIndexStart_d, mIndexEnd_d, adc_d,layer_d);
   cudaDeviceSynchronize();
   checkCUDAError("Error in RawToDigi_kernel");
-  /*
+  /* for debugging only
   uint size = wordCounter*sizeof(uint);
   uint *xx,*yy,*adc,*fedId,*moduleId;
   xx = (uint*)malloc(wordCounter*sizeof(uint));
@@ -490,18 +490,7 @@ void RawToDigi_kernel_wrapper(const uint wordCounter,uint *word,const uint fedCo
   free(fedId);
   free(moduleId); 
   */ 
-  //---- Prepare the input for clustering----------
-  
-  // This correction can be done during clustering also
-
-  // apply the correction to the moduleStart & moduleEnd
-  // if module contains only one pixel then either moduleStart 
-  // or moduleEnd is not updated(remains 9999) in RawToDigi kernel
-  // ex. moduleStart[1170] =9999 & moduleEnd[1170] = 34700
-  // because of 1 pixel moduleStart[1170] didn't update
-  // as per the if condition
-  
-  // before finding the cluster 
+  // for validation purpose only
   
   cudaMemcpy(mIndexStart, mIndexStart_d, mSize, cudaMemcpyDeviceToHost);
   cudaMemcpy(mIndexEnd,   mIndexEnd_d,   mSize, cudaMemcpyDeviceToHost);
@@ -522,8 +511,8 @@ void RawToDigi_kernel_wrapper(const uint wordCounter,uint *word,const uint fedCo
   }
 
   //copy te data back to the device memory
-  cudaMemcpy(mIndexStart_d, mIndexStart, mSize, cudaMemcpyHostToDevice);
-  cudaMemcpy(mIndexEnd_d,   mIndexEnd,   mSize, cudaMemcpyHostToDevice);
+  //cudaMemcpy(mIndexStart_d, mIndexStart, mSize, cudaMemcpyHostToDevice);
+  //cudaMemcpy(mIndexEnd_d,   mIndexEnd,   mSize, cudaMemcpyHostToDevice);
 
   // for validation only
   uint *xx,*yy;
@@ -552,6 +541,7 @@ void RawToDigi_kernel_wrapper(const uint wordCounter,uint *word,const uint fedCo
    mse.close();
    free(xx);
    free(yy);
+  
   //validation ends here
   checkCUDAError("Error in memcpy for moduleStart_end H2D");
   // kernel to apply adc threashold on the channel
