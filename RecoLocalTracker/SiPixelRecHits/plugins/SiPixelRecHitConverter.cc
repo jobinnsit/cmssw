@@ -112,6 +112,7 @@ namespace cms
     
     for ( ; DSViter != input.end() ; DSViter++) {
       numberOfDetUnits++;
+      cout<<"moduleId: "<<numberOfDetUnits<<endl;
       unsigned int detid = DSViter->detId();
       DetId detIdObject( detid );  
       const GeomDetUnit * genericDet = geom->idToDetUnit( detIdObject );

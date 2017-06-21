@@ -252,7 +252,7 @@ PixelCPEGeneric::localPosition(DetParam const & theDetParam, ClusterParam & theC
                         Q_f_Y, Q_l_Y );
    //sushil to print the cluster info that will be given to CPU standalone code 
   
-  ofstream iFile1("CPE_InputForCPU.txt", ios::app | ios::out);
+  ofstream iFile1("CPE_Input_CPU.txt", ios::app | ios::out);
   static bool write = true;
   if(write) {
    iFile1<<"mod#\tcluster#\tpixhit#\t x \t y \t adc"<<endl;
@@ -408,7 +408,7 @@ PixelCPEGeneric::localPosition(DetParam const & theDetParam, ClusterParam & theC
    
    //cout<<" in PixelCPEGeneric:localPosition - pos = "<<xPos<<" "<<yPos<<endl; //dk
   
-  ofstream iFile2("CMSSW920_CPE_Output.txt", ios::app | ios::out);
+  ofstream iFile2("CPE_CPU_CMSSW.txt", ios::app | ios::out);
   static bool write1 = true;
   if(write1) {
    iFile2<<"moduleId\t\t clusterId\t\t xhit \t yhit"<<endl;
@@ -422,7 +422,7 @@ PixelCPEGeneric::localPosition(DetParam const & theDetParam, ClusterParam & theC
     clusterId1=1;
    }                                                                                                                          
    else clusterId1++;
-     iFile2<<setw(14)<<module1<<setw(10)<<clusterId1<<setw(20)<<xPos<<setw(20)<<yPos<<endl;
+     iFile2<<setw(4)<<module1<<setw(14)<<clusterId1<<setw(14)<<xPos<<setw(14)<<yPos<<endl;
    //--- Now put the two together
      iFile2.close();
   
@@ -510,7 +510,7 @@ generic_position_formula( int size,                //!< Size of this projection.
    if(Qsum==0) Qsum=1.0f;
    //float hit_pos = geom_center + 0.5f*(Qdiff/Qsum) * W_eff + half_lorentz_shift;
    float hit_pos = geom_center + 0.5f*(Qdiff/Qsum) * W_eff;
-   count++;
+  
    //cout<<" in PixelCPEGeneric:generic_position_formula - "<<hit_pos<<" "<<lorentz_shift*0.5<<endl; //dk
    
 #ifdef EDM_ML_DEBUG

@@ -146,9 +146,9 @@ void PixelCPEBase::fillDetParams()
    
    
    m_DetParams.resize(m_detectors);
-   //unsigned int moduleId =0;
-   //ofstream cpeFile("Pixel_CPE_Phase1_database.dat");
-   //cpeFile<<"RawId\t\t"<<"X0\t\t"<<"Y0\t\t"<<"Z0\t\t"<<"theDetR\t\t"<<"theDetZ\t\t"<<"lorentzShiftX\t"<<"lorentzShiftY"<<endl;
+   unsigned int moduleId =0;
+   ofstream cpeFile("Pixel_CPE_Phase1_database.dat");
+   cpeFile<<"RawId\t\t"<<"X0\t\t"<<"Y0\t\t"<<"Z0\t\t"<<"theDetR\t\t"<<"theDetZ\t\t"<<"lorentzShiftX\t"<<"lorentzShiftY"<<endl;
    //cout<<"caching "<<m_detectors<<" pixel detectors"<<endl;
    for (unsigned i=0; i!=m_detectors;++i) {
       auto & p=m_DetParams[i];
@@ -170,8 +170,8 @@ void PixelCPEBase::fillDetParams()
       //p.theDetR = p.theDet->surface().position().perp();  //Not used, AH
       //p.theDetZ = p.theDet->surface().position().z();  //Not used, AH
 
-      //float theDetR = p.theDet->surface().position().perp();  
-      //float theDetZ = p.theDet->surface().position().z(); 
+      float theDetR = p.theDet->surface().position().perp();  
+      float theDetZ = p.theDet->surface().position().z(); 
       //--- Define parameters for chargewidth calculation
       
       //--- bounds() is implemented in BoundSurface itself.
@@ -216,7 +216,7 @@ void PixelCPEBase::fillDetParams()
       
     /***************Extract the CPE database for the GPU CPE******/
 
-      //moduleId = p.theDet->geographicalId().rawId();
+      moduleId = p.theDet->geographicalId().rawId();
 	  //cout<<"moduleId: "<<moduleId<<"  widthLAFractionX: "<<p.widthLAFractionX
 	  //<<"  widthLAFractionY: "<<p.widthLAFractionY<<endl;
       // Compute the Lorentz shifts for this detector element
@@ -224,9 +224,9 @@ void PixelCPEBase::fillDetParams()
          p.driftDirection = driftDirection(p, Bfield );
          computeLorentzShifts(p);
 		// cout<<setw(20)<<p.widthLAFractionX<<setw(10)<<p.widthLAFractionY<<endl;
-       // cpeFile<<setw(20)<<moduleId<<setw(20)<<p.theOrigin.x()<<setw(20)<<p.theOrigin.y()<<setw(20)
-       // <<p.theOrigin.z()<<setw(20)<<theDetR<<setw(20)<<theDetZ<<setw(20)
-       // <<p.lorentzShiftInCmX<<setw(20)<<p.lorentzShiftInCmY<<endl;
+        cpeFile<<setw(20)<<moduleId<<setw(20)<<p.theOrigin.x()<<setw(20)<<p.theOrigin.y()<<setw(20)
+        <<p.theOrigin.z()<<setw(20)<<theDetR<<setw(20)<<theDetZ<<setw(20)
+        <<p.lorentzShiftInCmX<<setw(20)<<p.lorentzShiftInCmY<<endl;
       }
      
       
@@ -239,7 +239,7 @@ void PixelCPEBase::fillDetParams()
       
       
    }
-  // cpeFile.close();
+   cpeFile.close();
 }
 
 //-----------------------------------------------------------------------------
