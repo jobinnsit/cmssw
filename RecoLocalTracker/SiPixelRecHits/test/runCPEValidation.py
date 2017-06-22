@@ -66,9 +66,9 @@ process.source = cms.Source("PoolSource",
 # 'file:/afs/cern.ch/work/d/dkotlins/public/MC/mu/pt100_71_pre7/tracks/tracks2_mc71.root'
 # 'file:/afs/cern.ch/work/d/dkotlins/public/MC/mu/pt100_71_pre7/rechits/rechits2_mc71.root'
 #2017
-#'/store/relval/CMSSW_9_2_0/RelValZMM_13/GEN-SIM-RECO/PU25ns_91X_upgrade2017_realistic_v5-v1/10000/28E1F8B5-D63C-E711-A025-0CC47A4D768E.root'
+'/store/relval/CMSSW_9_2_0/RelValZMM_13/GEN-SIM-RECO/PU25ns_91X_upgrade2017_realistic_v5-v1/10000/28E1F8B5-D63C-E711-A025-0CC47A4D768E.root'
 #2016
-'file:/afs/cern.ch/work/s/sdubey/data/9279A7C3-59ED-E511-95C8-0025905A60F8.root'
+#'file:/afs/cern.ch/work/s/sdubey/data/9279A7C3-59ED-E511-95C8-0025905A60F8.root'
 #'file:/afs/cern.ch/work/s/sdubey/data/RawToDigi/2EF61B7D-F216-E211-98C3-001D09F28D54.root'
 #'file:/afs/cern.ch/work/s/sdubey/data/Raw_Data_Phase1/0216ABF7-19B1-E611-8786-0025905A60F8.root'
 #'/store/mc/HG1504_HLT_Test/MajoranaNeutrinoToMuE_M-375_TuneZ2star_8TeV-alpgen/GEN-SIM/IntegrationTest1427988373HG1504_HLT_Test-v1/00000/103D51C3-1EDA-E411-83F2-02163E013038.root'
