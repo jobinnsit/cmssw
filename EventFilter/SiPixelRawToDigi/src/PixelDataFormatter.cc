@@ -19,6 +19,9 @@
 #include <bitset>
 #include <sstream>
 #include <iostream>
+#include <fstream>
+#include <iomanip>
+#include <stdio.h>
 
 using namespace std;
 using namespace edm;
@@ -124,12 +127,20 @@ void PixelDataFormatter::passFrameReverter(const SiPixelFrameReverter* reverter)
   theFrameReverter = reverter;
 }
 
-void PixelDataFormatter::interpretRawData(bool& errorsInEvent, int fedId, const FEDRawData& rawData, Collection & digis, Errors& errors)
+void PixelDataFormatter::interpretRawData(bool& errorsInEvent, int fedId, const FEDRawData& rawData, Collection & digis, Errors& errors, Word32 *wordGPU, Word32& wordCounterGPU)
 {
   using namespace sipixelobjects;
-
+  
+  //std::ofstream wordFile;
+  //wordFile.open("R2D_CPU_v1.txt", ios::out | ios::app);
+  //if(fedId==1200) {wordFile<<"fedId\t"<<"RawId\t"<<"xx\t"<<"yy\t"<<"adc"<<endl;}
   int nWords = rawData.size()/sizeof(Word64);
-  if (nWords==0) return;
+  if (nWords==0) {
+    wordGPU[wordCounterGPU++] =0;
+	// for testing purpose only
+	  //wordFile<<setw(6)<<fedId<<setw(14)<<9999<<setw(6)<<0<<setw(6)<<0<<setw(6)<<0<<endl;
+    return;
+  }  
 
   SiPixelFrameConverter converter(theCablingTree, fedId);
 
@@ -175,7 +186,14 @@ void PixelDataFormatter::interpretRawData(bool& errorsInEvent, int fedId, const 
     LogTrace("")<<"DATA: " <<  print(*word);
 
     auto ww = *word;
-    if unlikely(ww==0) { theWordCounter--; continue;}
+    //GPU specific
+	  //cout<<fedId<<"\t\t"<<ww<<endl;
+    wordGPU[wordCounterGPU++] = *word;
+    if unlikely(ww==0) {
+	    theWordCounter--;
+	    //wordFile<<setw(6)<<fedId<<setw(14)<<9999<<setw(6)<<0<<setw(6)<<0<<setw(6)<<0<<endl;
+	    continue;
+	  }
     int nlink = (ww >> LINK_shift) & LINK_mask; 
     int nroc  = (ww >> ROC_shift) & ROC_mask;
 
@@ -187,10 +205,10 @@ void PixelDataFormatter::interpretRawData(bool& errorsInEvent, int fedId, const 
       if (skipROC) continue;
       rocp = converter.toRoc(link,roc);
       if unlikely(!rocp) {
-	errorsInEvent = true;
-	errorcheck.conversionError(fedId, &converter, 2, ww, errors);
-	skipROC=true;
-	continue;
+	      errorsInEvent = true;
+	      errorcheck.conversionError(fedId, &converter, 2, ww, errors);
+	      skipROC=true;
+	      continue;
       }
       auto rawId = rocp->rawId();
       bool barrel = PixelModuleName::isBarrel(rawId);
@@ -199,11 +217,14 @@ void PixelDataFormatter::interpretRawData(bool& errorsInEvent, int fedId, const 
 
       //if(DANEK) cout<<" rocp "<<rocp->print()<<" layer "<<rocp->bpixLayerPhase1(rawId)<<" "
       //  <<layer<<" phase1 "<<phase1<<" rawid "<<rawId<<endl;
-
+      //int rocInDet = rocp->idInDetUnit();
+      //if(fedId==1248) {
+        //printf("fedId: %d  link: %d  roc: %d  rawId: %u  rocInDU: %d\n",fedId,link,roc,rawId, rocInDet);
+      //}
       if (useQualityInfo&(nullptr!=badPixelInfo)) {
-	short rocInDet = (short) rocp->idInDetUnit();
-	skipROC = badPixelInfo->IsRocBad(rawId, rocInDet);
-	if (skipROC) continue;
+	      short rocInDet = (short) rocp->idInDetUnit();
+	      skipROC = badPixelInfo->IsRocBad(rawId, rocInDet);
+	      if (skipROC) continue;
       }
       skipROC= modulesToUnpack && ( modulesToUnpack->find(rawId) == modulesToUnpack->end());
       if (skipROC) continue;
@@ -216,6 +237,7 @@ void PixelDataFormatter::interpretRawData(bool& errorsInEvent, int fedId, const 
     if unlikely(skipROC || !rocp) continue;
     
     int adc  = (ww >> ADC_shift) & ADC_mask;
+	//cout<<"adc:  "<<adc<<endl;
     std::unique_ptr<LocalPixel> local;
 
     if(phase1 && layer==1) { // special case for layer 1ROC
@@ -224,7 +246,9 @@ void PixelDataFormatter::interpretRawData(bool& errorsInEvent, int fedId, const 
       int row = (ww >> ROW_shift) & ROW_mask;
       //if(DANEK) cout<<" layer 1: raw2digi "<<link<<" "<<roc<<" "
       //  <<col<<" "<<row<<" "<<adc<<endl;      
-
+      //if(fedId==1248) {
+        //cout<<setw(14)<<ww<<setw(10)<<row<<setw(10)<<col<<setw(10)<<adc<<endl;
+      //}
       LocalPixel::RocRowCol localCR = { row, col }; // build pixel
       //if(DANEK)cout<<localCR.rocCol<<" "<<localCR.rocRow<<endl;
       if unlikely(!localCR.valid()) {
@@ -245,24 +269,30 @@ void PixelDataFormatter::interpretRawData(bool& errorsInEvent, int fedId, const 
       
       LocalPixel::DcolPxid localDP = { dcol, pxid };
       //if(DANEK) cout<<localDP.dcol<<" "<<localDP.pxid<<endl;
-
+      //if(fedId==1248) {
+        //cout<<setw(14)<<ww<<setw(6)<<dcol<<setw(6)<<pxid<<setw(6)<<adc<<endl;
+      //}
       if unlikely(!localDP.valid()) {
-	  LogDebug("PixelDataFormatter::interpretRawData") 
-	    << "status #3";
-	  errorsInEvent = true;
-	  errorcheck.conversionError(fedId, &converter, 3, ww, errors);
-	  continue;
-	}
+	      LogDebug("PixelDataFormatter::interpretRawData") 
+	      << "status #3";
+	      errorsInEvent = true;
+	      errorcheck.conversionError(fedId, &converter, 3, ww, errors);
+	      continue;
+	    }
       local = std::make_unique<LocalPixel>(localDP); // local pixel coordinate 
       //if(DANEK) cout<<local->dcol()<<" "<<local->pxid()<<" "<<local->rocCol()<<" "<<local->rocRow()<<endl;
     }    
 
     GlobalPixel global = rocp->toGlobal( *local ); // global pixel coordinate (in module)
     (*detDigis).data.emplace_back(global.row, global.col, adc);
+	  //wordFile<<setw(6)<<fedId<<setw(14)<<rocp->rawId()<<setw(6)
+	      //<<global.row<<setw(6)<<global.col<<setw(6)<<adc<<endl;
     //if(DANEK) cout<<global.row<<" "<<global.col<<" "<<adc<<endl;    
-    LogTrace("") << (*detDigis).data.back();
+   //wordFile<<(fedId-1200)<<"\t\t"<<*word
+   //<<"\t\t"<<global.row<<"\t\t"<<global.col<<endl;
+   LogTrace("") << (*detDigis).data.back();
   }
-
+  //wordFile.close();
 }
 
 // I do not know what this was for or if it is needed? d.k. 10.14
