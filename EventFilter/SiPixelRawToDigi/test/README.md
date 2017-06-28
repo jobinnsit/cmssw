@@ -1,1 +1,2 @@
-GPU version of RawToDigi, clustering and CPE.
+Validation of RawToDigi Output of CPU and GPU
+

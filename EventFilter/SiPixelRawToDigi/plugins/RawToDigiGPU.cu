@@ -488,10 +488,6 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
     cudaStreamCreate(&stream[i]);
   }
 
-  cudaEvent_t start, stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
-  cudaEventRecord(start);
   //const int nBlocks = fedCounter; // =108
   const int threads = 512;
   const int blockX = 108; // 108 feds
@@ -529,18 +525,13 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
     RawToDigi_kernel<<<gridsize,threads,0, stream[i]>>>(Map,word_d, fedIndex_d,eventIndex_d,i, xx_d, yy_d, moduleId_d,
                                         mIndexStart_d, mIndexEnd_d, adc_d,layer_d, RawId_d);
   }
-  cudaDeviceSynchronize();
+  //cudaDeviceSynchronize();
   checkCUDAError("Error in RawToDigi_kernel");
   for (int i = 0; i<NSTREAM; i++) {
     cudaStreamSynchronize(stream[i]);
   }
-  cudaEventRecord(stop);
-  cudaEventSynchronize(stop);
-  float ms=0;
-  cudaEventElapsedTime(&ms, start, stop);
-  cout<<"Time for RawToDigi: "<<ms<<endl;
 
-  
+  // some extra stuff is done in the kernel for output purpose
   uint size = wordCounter*sizeof(uint);
   uint *xx,*yy,*adc,*fedId,*RawId;
   xx = (uint*)malloc(wordCounter*sizeof(uint));
