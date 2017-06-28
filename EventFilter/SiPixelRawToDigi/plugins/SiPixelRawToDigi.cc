@@ -43,6 +43,8 @@
 #include <iostream>
 #include <fstream>
 // for GPU
+// Event Info
+#include "EventInfoGPU.h"
 // device memory intialization for RawTodigi
 #include "RawToDigiMem.h"
 // device memory initialization for CPE
@@ -117,14 +119,18 @@ SiPixelRawToDigi::SiPixelRawToDigi( const edm::ParameterSet& conf )
   //GPU specific
   const int MAX_FED  = 150;
   const int MAX_WORD = 2000;
-  word = (unsigned int*)malloc(MAX_FED*MAX_WORD*sizeof(unsigned int));
-  fedIndex =(unsigned int*)malloc(2*(MAX_FED+1)*sizeof(unsigned int));
+  int WSIZE    = MAX_FED*MAX_WORD*NEVENT*sizeof(unsigned int);
+  int FSIZE    = 2*MAX_FED*NEVENT*sizeof(unsigned int)+sizeof(unsigned int); 
+  word = (unsigned int*)malloc(WSIZE);
+  fedIndex =(unsigned int*)malloc(FSIZE);
+  eventIndex = (unsigned int*)malloc((NEVENT+1)*sizeof(unsigned int));
+  eventIndex[0] =0;
   // allocate memory for RawToDigi on GPU
   initDeviceMemory();
   // allocate memory for CPE on GPU
-  initDeviceMemCPE();
+  //initDeviceMemCPE();
   // allocate auxilary memory for clustering
-  initDeviceMemCluster();
+  //initDeviceMemCluster();
 }
 
 
@@ -141,12 +147,13 @@ SiPixelRawToDigi::~SiPixelRawToDigi() {
   }
   free(word);
   free(fedIndex);
+  free(eventIndex);
   // free device memory used for RawToDigi on GPU
   freeMemory(); 
   // free device memory used for CPE on GPU
-  freeDeviceMemCPE();
+  //freeDeviceMemCPE();
   // free auxilary memory used for clustering
-  freeDeviceMemCluster();
+  //freeDeviceMemCluster();
 }
 
 void
@@ -190,7 +197,7 @@ SiPixelRawToDigi::fillDescriptions(edm::ConfigurationDescriptions& descriptions)
 void SiPixelRawToDigi::produce( edm::Event& ev,
                               const edm::EventSetup& es) 
 {
-  const uint32_t dummydetid = 0xffffffff;
+  //const uint32_t dummydetid = 0xffffffff;
   debug = edm::MessageDrop::instance()->debugEnabled;
 
 // initialize cabling map or update if necessary
@@ -216,7 +223,7 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
   edm::Handle<FEDRawDataCollection> buffers;
   ev.getByToken(tFEDRawDataCollection, buffers);
 
-// create product (digis & errors)
+  // create product (digis & errors)
   auto collection = std::make_unique<edm::DetSetVector<PixelDigi>>();
   // collection->reserve(8*1024);
   auto errorcollection = std::make_unique<edm::DetSetVector<SiPixelRawDataError>>();
@@ -242,18 +249,20 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
   }
   // GPU specific 
   // data extraction for RawToDigi GPU
-  unsigned int wordCounterGPU =0;
-  unsigned int fedCounter =0;
+  static unsigned int wordCounterGPU =0;
+  unsigned int fedCounter = 0;
   const unsigned int MAX_FED = 150;
+  static int eventCount = 0;
+  
   ErrorChecker errorcheck;
   for (auto aFed = fedIds.begin(); aFed != fedIds.end(); ++aFed) {
     int fedId = *aFed;
-    // cout<<"FedId: "<<fedId<<endl;
+   
     // for GPU
     // first 150 index stores the fedId and next 150 will store the
     // start index of word in that fed
-    fedIndex[fedCounter] = fedId-1200;
-    fedIndex[MAX_FED + fedCounter] = wordCounterGPU; // MAX_FED = 150
+    fedIndex[2*MAX_FED*eventCount+fedCounter] = fedId-1200;
+    fedIndex[MAX_FED + 2*MAX_FED*eventCount+fedCounter] = wordCounterGPU; // MAX_FED = 150
     fedCounter++;
 
     //get event data for this fed
@@ -400,35 +409,16 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
   }
   */
   //GPU specific
- 
-  static int eventCount=0;
-  eventCount++;
-  //cout<<"Event: "<<setw(4)<<eventCount<<"  Total Hits: "<<setw(8)<<wordCounterGPU<<endl;
-  // following code is to extract the Raw data put it to ascii file and pass it to
-  // standalone RawToDigi
-  /*
-  ofstream fedEventFile("fedCount_EventFile.dat", ios::out | ios::app);
-  fedEventFile<<setw(6)<<fedCounter<<setw(8)<<wordCounterGPU<<endl;
-  fedEventFile.close();
   
-  // to store the fedId and there index
-  ofstream fedIndexFile("fedIndexFile_HT_after.dat", ios::out | ios::app);
-  for(unsigned int i=0;i<150*2;i++) {
-   // cout<<"fedId: "<<i<<"   Index: "<<fedIndex[150+i]<<endl;
-   fedIndexFile<<fedIndex[i]<<endl;
-   //fedIndex[i] =0;
-  }
-  ofstream dataFile("wordDataFile_HT_debug_after.dat", ios::out | ios::app);
-  for(unsigned int i=0;i<wordCounterGPU;i++) {
-    dataFile<<word[i]<<endl;
-  }
-  fedIndexFile.close();
-  dataFile.close();
-  */
   // RawToDigi -> clustering -> CPE
-  RawToDigi_kernel_wrapper (wordCounterGPU, word, fedCounter,fedIndex);
+  eventCount++;
+  eventIndex[eventCount] = wordCounterGPU;
+  cout<<"Data read for event: "<<eventCount<<endl;
+  if(eventCount==NEVENT) {
+    RawToDigi_Cluster_CPE_wrapper(wordCounterGPU, word, fedCounter,fedIndex, eventIndex);
+    wordCounterGPU =  0;
+  }
 
-	wordCounterGPU = 0;
   fedCounter =0;
 } // end of produce function
 

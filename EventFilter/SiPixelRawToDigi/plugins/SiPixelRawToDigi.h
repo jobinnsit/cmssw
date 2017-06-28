@@ -66,6 +66,7 @@ private:
 
   unsigned int *word; // to hold input for rawtodigi on GPU
   unsigned int *fedIndex; // to hold fed index inside word[] for rawtodigi on GPU
+  unsigned int *eventIndex;
   
 };
 #endif

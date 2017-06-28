@@ -25,13 +25,27 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include "CudaError.h"
+#include "EventInfoGPU.h"
 #include "RawToDigiGPU.h"
 #include "RawToDigiMem.h"
 using namespace std;
 
 // forward declaration to be moved in header file
-void PixelCluster_Wrapper(uint *xx_adc, uint *yy_adc, uint *adc_d,const uint wordCounter, 
-                          const int *mIndexStart, const int *mIndexEnd);
+//void PixelCluster_Wrapper(uint *xx_adc, uint *yy_adc, uint *adc_d,const uint wordCounter, 
+//                          const int *mIndexStart, const int *mIndexEnd);
+
+/*
+  This functions checks for cuda error
+  Input: debug message
+  Output: returns cuda error message
+*/
+void checkCUDAError(const char *msg) {
+  cudaError_t err = cudaGetLastError();
+  if( cudaSuccess != err) {
+    fprintf(stderr, "Cuda error: %s: %s.\n", msg, cudaGetErrorString( err) );
+    exit(-1);
+  }
+}
 
 /*
 void initCablingMap() {
@@ -80,23 +94,26 @@ void initDeviceMemory() {
   cudaMallocManaged((void**)&Map->rocInDet, sizeByte);
   cudaMallocManaged((void**)&Map->moduleId, sizeByte);
     // Number of words for all the feds 
-  const uint MAX_WORD_SIZE = MAX_FED*MAX_WORD*sizeof(uint); 
+  uint MAX_WORD_SIZE = MAX_FED*MAX_WORD*NEVENT*sizeof(uint); 
+  uint FSIZE = 2*MAX_FED*NEVENT*sizeof(uint)+sizeof(uint);
   
 
-  int mSize = totalModule*sizeof(int);
+  int MSIZE = NMODULE*NEVENT*sizeof(int);
+
+  cudaMalloc((void**)&eventIndex_d, (NEVENT+1)*sizeof(uint));
 
   cudaMalloc((void**)&word_d,       MAX_WORD_SIZE);
-  cudaMalloc((void**)&fedIndex_d,   2*(MAX_FED+1)*sizeof(uint));
+  cudaMalloc((void**)&fedIndex_d,   FSIZE);
   cudaMalloc((void**)&xx_d,         MAX_WORD_SIZE); // to store the x and y coordinate
   cudaMalloc((void**)&yy_d,         MAX_WORD_SIZE);
-  cudaMalloc((void**)&xx_adc,         MAX_WORD_SIZE); // to store the x and y coordinate
-  cudaMalloc((void**)&yy_adc,         MAX_WORD_SIZE);
+  cudaMalloc((void**)&xx_adc,       MAX_WORD_SIZE); // to store the x and y coordinate
+  cudaMalloc((void**)&yy_adc,       MAX_WORD_SIZE);
   cudaMalloc((void**)&adc_d,        MAX_WORD_SIZE);
   cudaMalloc((void**)&layer_d ,     MAX_WORD_SIZE);
 
   cudaMalloc((void**)&moduleId_d,   MAX_WORD_SIZE);
-  cudaMalloc((void**)&mIndexStart_d, mSize);
-  cudaMalloc((void**)&mIndexEnd_d, mSize);
+  cudaMalloc((void**)&mIndexStart_d, MSIZE);
+  cudaMalloc((void**)&mIndexEnd_d,   MSIZE);
   
   cout<<"Memory Allocated successfully !\n";
   // Upload the cabling Map
@@ -107,7 +124,7 @@ void initDeviceMemory() {
 void freeMemory() {
 
   //GPU specific
- 
+  cudaFree(eventIndex_d);
   cudaFree(word_d);
   cudaFree(fedIndex_d);
   cudaFree(adc_d);
@@ -280,26 +297,36 @@ __global__ void applyADCthreshold_kernel
 
 // Kernel to perform Raw to Digi conversion
 __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const uint *fedIndex, 
-                                 uint *XX, uint *YY, uint *moduleId, int *mIndexStart, 
+                                 uint *eventIndex,const uint stream, uint *XX, uint *YY, uint *moduleId, int *mIndexStart, 
                                  int *mIndexEnd, uint *ADC, uint *layerArr) 
 {
-  int blockId = blockIdx.x;
-  uint fedId    = fedIndex[blockId];
-  int threadId = threadIdx.x;
-  //if(threadIdx.x==0) printf("fedId: %d\n",fedId);
-  int begin  = fedIndex[MAX_FED+blockId];
-  int end    = fedIndex[MAX_FED+blockId+1];
- 
-  int no_itr = (end - begin)/ blockDim.x + 1; // to deal with number of hits greater than blockDim.x 
+  uint blockId  = blockIdx.x;
+  uint eventno  = blockIdx.y + gridDim.y*stream;
+  
+  //const uint eventOffset  = eventIndex[eventno]; 
+  uint fedOffset    = 2*150*eventno;
+
+  uint fedId     = fedIndex[fedOffset+blockId];
+  uint threadId  = threadIdx.x;
+  
+  uint begin  = fedIndex[fedOffset + MAX_FED+blockId];
+  uint end    = fedIndex[fedOffset + MAX_FED+blockId+1];
+
+  if(blockIdx.x==gridDim.x-1) {
+    end = eventIndex[eventno+1]; // for last fed to get the end index
+  }
+
+  //if(threadId==0) printf("Event: %u blockId: %u start: %u end: %u\n", eventno, blockId, begin, end);
+  int no_itr = (end - begin)/blockDim.x + 1; // to deal with number of hits greater than blockDim.x 
   #pragma unroll
   for(int i =0; i<no_itr; i++) { // use a static number to optimize this loop
-    int gIndex = begin + threadId + i*blockDim.x;  // *optimize this
+    uint gIndex = begin + threadId + i*blockDim.x; 
     if(gIndex <end) {
       uint ww    = Word[gIndex]; // Array containing 32 bit raw data
       if(ww == 0 ) {
         //noise and dead channels are ignored
-        XX[gIndex] = 0;  // 0 is an indicator of a noise/dead channel
-        YY[gIndex]  = 0; // skip these pixels during clusterization
+        XX[gIndex]    = 0;  // 0 is an indicator of a noise/dead channel
+        YY[gIndex]    = 0; // skip these pixels during clusterization
         ADC[gIndex]   = 0;
         layerArr[gIndex] = 0; 
         moduleId[gIndex] = 9999; //9999 is the indication of bad module, taken care later  
@@ -352,9 +379,11 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
       }
       //if(fedId==48)
         //printf("%14u%6d%6d%6d\n",ww,localPix.row,localPix.col, getADC(ww));
+      
       Pixel globalPix = frameConversion(barrel, side, layer,rocIdInDetUnit, localPix);
-      XX[gIndex]    = globalPix.row +1  ; // origin shifting by 1 0-159
-      YY[gIndex]    = globalPix.col +1 ; // origin shifting by 1 0-415
+      //if(threadId==0) printf("Event: %u fedId: %u\n",eventno, fedId );
+      XX[gIndex]    = globalPix.row+1  ; // origin shifting by 1 0-159
+      YY[gIndex]    = globalPix.col+1 ; // origin shifting by 1 0-415
       ADC[gIndex]   = getADC(ww);
       layerArr[gIndex] = layer;
       moduleId[gIndex] = detId.moduleId;
@@ -362,6 +391,7 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
   } // end of for(int i =0;i<no_itr...)
   
   __syncthreads();
+
   // three cases possible
   // case 1: 21 21 21 22 21 22 22
   // pos   : 0  1  2  3  4  5  6
@@ -369,9 +399,9 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
   // atomicExch(address, value), set the variable at address to value.
   // do the swapping for above case and replace the 9999 with 
   // valid moduleId
-  
+   
   for(int i =0; i<no_itr; i++) { 
-    int gIndex = begin + threadId + i*blockDim.x;  
+    uint gIndex = begin + threadId + i*blockDim.x;  
     if(gIndex <end) {
       //rare condition 
       if(moduleId[gIndex]==moduleId[gIndex+2] && moduleId[gIndex]<moduleId[gIndex+1]) {
@@ -415,51 +445,91 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
   // check consecutive module numbers
   // for start of fed
   for(int i =0; i<no_itr; i++) { 
-    int gIndex = begin + threadId + i*blockDim.x;  
+    uint gIndex = begin + threadId + i*blockDim.x; 
+    uint moduleOffset = NMODULE*eventno; 
+    //if(threadId==0) printf("moduleOffset: %u\n",moduleOffset );
     if(gIndex <end) {
       if(gIndex == begin) {
-        mIndexStart[moduleId[gIndex]] = gIndex;
+        mIndexStart[moduleOffset+moduleId[gIndex]] = gIndex;
       }
       // for end of the fed
       if(gIndex == (end-1)) {  
-        mIndexEnd[moduleId[gIndex]] = gIndex;
+        mIndexEnd[moduleOffset+moduleId[gIndex]] = gIndex;
       }   
       // point to the gIndex where two consecutive moduleId varies
       if(gIndex!= begin && (gIndex<(end-1)) && moduleId[gIndex]!=9999) {
         if(moduleId[gIndex]<moduleId[gIndex+1] ) {
-          mIndexEnd[moduleId[gIndex]] = gIndex;
+          mIndexEnd[moduleOffset + moduleId[gIndex]] = gIndex;
         }
         if(moduleId[gIndex] > moduleId[gIndex-1] ) {
-          mIndexStart[moduleId[gIndex]] = gIndex;
+          mIndexStart[moduleOffset+ moduleId[gIndex]] = gIndex;
         } 
       } //end of if(gIndex!= begin && (gIndex<(end-1)) ...  
     } //end of if(gIndex <end) 
   }
-  
 } // end of Raw to Digi kernel
 
 // kernel wrapper called from runRawToDigi_kernel
-void RawToDigi_kernel_wrapper(const uint wordCounter,uint *word,const uint fedCounter, uint *fedIndex) { 
+void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word, 
+                                    const uint fedCounter,  uint *fedIndex,
+                                    uint *eventIndex) { 
   
  
   cout<<"Inside RawToDigi , total words: "<<wordCounter<<endl;
-  int nBlocks = fedCounter; // =108
-  int threads = 512; //
-  fedIndex[MAX_FED+nBlocks] = wordCounter;
+  const int NSTREAM = 4;
+  cudaStream_t stream[NSTREAM];
+  for(int i=0;i<NSTREAM;i++) {
+    cudaStreamCreate(&stream[i]);
+  }
+
+  cudaEvent_t start, stop;
+  cudaEventCreate(&start);
+  cudaEventCreate(&stop);
+  cudaEventRecord(start);
+  //const int nBlocks = fedCounter; // =108
+  const int threads = 512;
+  const int blockX = 108; // 108 feds
+  const int blockY = 100;   //blockIdx.y=2 is the no of events processed in kernel concurrently
+  dim3 gridsize(blockX, blockY); 
+  //fedIndex[MAX_FED+nBlocks] = wordCounter;
   
-  int mSize = totalModule*sizeof(int);
-  uint eventSize = wordCounter*sizeof(uint);
-	// initialize moduleStart & moduleEnd with some constant(-1)
-	// number just to check if it updated in kernel or not
-  cudaMemset(mIndexStart_d, -1, mSize);
-  cudaMemset(mIndexEnd_d, -1, mSize);
-  cudaMemcpy(word_d, word, eventSize, cudaMemcpyHostToDevice);
-  cudaMemcpy(fedIndex_d, fedIndex, 2*(MAX_FED+1)*sizeof(uint), cudaMemcpyHostToDevice); 
-  // Launch rawToDigi kernel
-  RawToDigi_kernel<<<nBlocks,threads>>>(Map,word_d, fedIndex_d, xx_d, yy_d, moduleId_d,
+  int MSIZE = NMODULE*NEVENT*sizeof(int);
+  // initialize moduleStart & moduleEnd with some constant(-1)
+  // just to check if it updated in kernel or not
+  cudaMemset(mIndexStart_d, -1, MSIZE);
+  cudaMemset(mIndexEnd_d, -1, MSIZE);
+  cudaMemcpy(eventIndex_d, eventIndex, (NEVENT+1)*sizeof(uint), cudaMemcpyHostToDevice);
+  
+  //for(int i=0;i<NEVENT;i++) cout<<"Event: "<<i<<" offset: "<<
+  int FSIZE = (blockY*2*MAX_FED +1)*sizeof(uint); // 0 to 150:fedId, 150:300: fedIndex
+  
+	int fedOffset  = 0;
+  int wordOffset = 0;
+  int wordSize   = 0;
+  for (int i=0; i<NSTREAM; i++) {
+    fedOffset  = blockY*2*150*i;
+    wordOffset = eventIndex[blockY*i];
+    // total no of words in blockY event to be trasfered on device 
+    wordSize   = (eventIndex[blockY*(i+1)] - eventIndex[blockY*i]); 
+
+    cudaMemcpyAsync(&word_d[wordOffset], &word[wordOffset], wordSize*sizeof(uint), cudaMemcpyHostToDevice, stream[i]);
+
+    cudaMemcpyAsync(&fedIndex_d[fedOffset], &fedIndex[fedOffset], FSIZE, cudaMemcpyHostToDevice, stream[i]); 
+    // Launch rawToDigi kernel
+    RawToDigi_kernel<<<gridsize,threads,0, stream[i]>>>(Map,word_d, fedIndex_d,eventIndex_d,i, xx_d, yy_d, moduleId_d,
                                         mIndexStart_d, mIndexEnd_d, adc_d,layer_d);
-  cudaDeviceSynchronize();
+  }
+  //cudaDeviceSynchronize();
   checkCUDAError("Error in RawToDigi_kernel");
+  for (int i = 0; i<NSTREAM; i++) {
+    cudaStreamSynchronize(stream[i]);
+  }
+  cudaEventRecord(stop);
+  cudaEventSynchronize(stop);
+  float ms=0;
+  cudaEventElapsedTime(&ms, start, stop);
+  cout<<"Time for RawToDigi: "<<ms<<endl;
+
   /*
   uint size = wordCounter*sizeof(uint);
   uint *xx,*yy,*adc,*fedId,*moduleId;
@@ -485,7 +555,7 @@ void RawToDigi_kernel_wrapper(const uint wordCounter,uint *word,const uint fedCo
   free(adc);
   free(fedId);
   free(moduleId); 
-  */ 
+  */
 
   checkCUDAError("Error in memcpy for moduleStart_end H2D");
   // kernel to apply adc threashold on the channel
@@ -495,5 +565,5 @@ void RawToDigi_kernel_wrapper(const uint wordCounter,uint *word,const uint fedCo
   applyADCthreshold_kernel<<<numBlocks, numThreads>>>(xx_d, yy_d,layer_d,adc_d,wordCounter,adcThreshold, xx_adc, yy_adc);
   cudaDeviceSynchronize();
   checkCUDAError("Error in applying ADC threshold");
-  PixelCluster_Wrapper(xx_adc , yy_adc, adc_d,wordCounter, mIndexStart_d, mIndexEnd_d);
+  //PixelCluster_Wrapper(xx_adc , yy_adc, adc_d,wordCounter, mIndexStart_d, mIndexEnd_d);
 }

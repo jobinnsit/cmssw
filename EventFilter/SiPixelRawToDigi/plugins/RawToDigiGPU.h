@@ -98,10 +98,10 @@ struct  CablingMap{
 //CablingMap *Map;
 
  //GPU specific
- uint *word_d, *fedIndex_d;       // Device copy of input data
+ uint *word_d, *fedIndex_d, *eventIndex_d;       // Device copy of input data
  uint *xx_d, *yy_d,*xx_adc, *yy_adc, *moduleId_d, *adc_d, *layer_d;  // Device copy
  // store the start and end index for each module (total 1856 modules-phase 1)
- int totalModule = 1856; // for phase 1, we have 1856 modules
+
  int *mIndexStart_d, *mIndexEnd_d; 
  CablingMap *Map;
 #endif
