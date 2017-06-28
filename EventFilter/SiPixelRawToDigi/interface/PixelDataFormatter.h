@@ -78,7 +78,7 @@ public:
   int nDigis() const { return theDigiCounter; }
   int nWords() const { return theWordCounter; }
   //GPU specific
-  void interpretRawData(bool& errorsInEvent, int fedId,  const FEDRawData & data, Collection & digis, Errors & errors, Word32 *wordGPU, Word32& wordCounterGPU);
+  void interpretRawData(bool& errorsInEvent, int fedId,  const FEDRawData & data, Collection & digis, Errors & errors);
 
   void formatRawData( unsigned int lvl1_ID, RawData & fedRawData, const Digis & digis);
 

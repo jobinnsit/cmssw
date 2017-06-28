@@ -197,7 +197,7 @@ SiPixelRawToDigi::fillDescriptions(edm::ConfigurationDescriptions& descriptions)
 void SiPixelRawToDigi::produce( edm::Event& ev,
                               const edm::EventSetup& es) 
 {
-  //const uint32_t dummydetid = 0xffffffff;
+  const uint32_t dummydetid = 0xffffffff;
   debug = edm::MessageDrop::instance()->debugEnabled;
 
 // initialize cabling map or update if necessary
@@ -316,16 +316,16 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
   
 
   // original for loop
- /*
+ 
   for (auto aFed = fedIds.begin(); aFed != fedIds.end(); ++aFed) {
     int fedId = *aFed;
     //cout<<"FedId: "<<fedId<<endl;
     // for GPU
     // first 150 index stores the fedId and next 150 will store the
     // start index of word in that fed
-    fedIndex[fedCounter] = fedId-1200;
-    fedIndex[MAX_FED + fedCounter] = wordCounterGPU; // MAX_FED = 150
-    fedCounter++;
+    //fedIndex[fedCounter] = fedId-1200;
+    //fedIndex[MAX_FED + fedCounter] = wordCounterGPU; // MAX_FED = 150
+    //fedCounter++;
     if(!usePilotBlade && (fedId==40) ) continue; // skip pilot blade data
 
     if (regions_ && !regions_->mayUnpackFED(fedId)) continue;
@@ -339,7 +339,7 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
     //GPU specific
     
     //convert data to digi and strip off errors
-    formatter.interpretRawData( errorsInEvent, fedId, fedRawData, *collection, errors,word, wordCounterGPU);
+    formatter.interpretRawData( errorsInEvent, fedId, fedRawData, *collection, errors);
    
     //pack errors into collection
     if(includeErrors) {
@@ -381,8 +381,8 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
     } // end of includeErrors
      
   }  // end of for loop
- */ 
-  /*
+  
+  
   if(includeErrors) {
     edm::DetSet<SiPixelRawDataError>& errorDetSet = errorcollection->find_or_insert(dummydetid);
     errorDetSet.data = nodeterrors;
@@ -407,7 +407,7 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
     ev.put(std::move(tkerror_detidcollection));
     ev.put(std::move(usererror_detidcollection), "UserErrorModules");
   }
-  */
+  
   //GPU specific
   
   // RawToDigi -> clustering -> CPE

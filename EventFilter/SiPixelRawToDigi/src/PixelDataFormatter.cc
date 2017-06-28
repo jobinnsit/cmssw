@@ -127,18 +127,22 @@ void PixelDataFormatter::passFrameReverter(const SiPixelFrameReverter* reverter)
   theFrameReverter = reverter;
 }
 
-void PixelDataFormatter::interpretRawData(bool& errorsInEvent, int fedId, const FEDRawData& rawData, Collection & digis, Errors& errors, Word32 *wordGPU, Word32& wordCounterGPU)
+void PixelDataFormatter::interpretRawData(bool& errorsInEvent, int fedId, const FEDRawData& rawData, Collection & digis, Errors& errors)
 {
   using namespace sipixelobjects;
   
-  //std::ofstream wordFile;
-  //wordFile.open("R2D_CPU_v1.txt", ios::out | ios::app);
-  //if(fedId==1200) {wordFile<<"fedId\t"<<"RawId\t"<<"xx\t"<<"yy\t"<<"adc"<<endl;}
+  std::ofstream wordFile;
+  wordFile.open("R2D_CPU.txt", ios::out | ios::app);
+  static int flag=1;
+  if(fedId==1200 && flag==1) {
+    wordFile<<"fedId\t"<<"RawId\t"<<"xx\t"<<"yy\t"<<"adc"<<endl;
+    flag = 0;
+  }
   int nWords = rawData.size()/sizeof(Word64);
   if (nWords==0) {
-    wordGPU[wordCounterGPU++] =0;
+    //wordGPU[wordCounterGPU++] =0;
 	// for testing purpose only
-	  //wordFile<<setw(6)<<fedId<<setw(14)<<9999<<setw(6)<<0<<setw(6)<<0<<setw(6)<<0<<endl;
+	   wordFile<<setw(6)<<fedId<<setw(14)<<9999<<setw(6)<<0<<setw(6)<<0<<setw(6)<<0<<endl;
     return;
   }  
 
@@ -188,10 +192,10 @@ void PixelDataFormatter::interpretRawData(bool& errorsInEvent, int fedId, const 
     auto ww = *word;
     //GPU specific
 	  //cout<<fedId<<"\t\t"<<ww<<endl;
-    wordGPU[wordCounterGPU++] = *word;
+    //wordGPU[wordCounterGPU++] = *word;
     if unlikely(ww==0) {
 	    theWordCounter--;
-	    //wordFile<<setw(6)<<fedId<<setw(14)<<9999<<setw(6)<<0<<setw(6)<<0<<setw(6)<<0<<endl;
+	    wordFile<<setw(6)<<fedId<<setw(14)<<9999<<setw(6)<<0<<setw(6)<<0<<setw(6)<<0<<endl;
 	    continue;
 	  }
     int nlink = (ww >> LINK_shift) & LINK_mask; 
@@ -285,14 +289,14 @@ void PixelDataFormatter::interpretRawData(bool& errorsInEvent, int fedId, const 
 
     GlobalPixel global = rocp->toGlobal( *local ); // global pixel coordinate (in module)
     (*detDigis).data.emplace_back(global.row, global.col, adc);
-	  //wordFile<<setw(6)<<fedId<<setw(14)<<rocp->rawId()<<setw(6)
-	      //<<global.row<<setw(6)<<global.col<<setw(6)<<adc<<endl;
+	  wordFile<<setw(6)<<fedId<<setw(14)<<rocp->rawId()<<setw(6)
+	      <<global.row<<setw(6)<<global.col<<setw(6)<<adc<<endl;
     //if(DANEK) cout<<global.row<<" "<<global.col<<" "<<adc<<endl;    
    //wordFile<<(fedId-1200)<<"\t\t"<<*word
    //<<"\t\t"<<global.row<<"\t\t"<<global.col<<endl;
    LogTrace("") << (*detDigis).data.back();
   }
-  //wordFile.close();
+  wordFile.close();
 }
 
 // I do not know what this was for or if it is needed? d.k. 10.14

@@ -259,7 +259,7 @@ __device__ Pixel frameConversion(bool bpix, int side, uint layer,uint rocIdInDet
 *-----------
 * Output: xx_adc[], yy_adc[] with pixel threshold applied 
 */
-// kernel to apply adc threshold on the channels	
+// kernel to apply adc threshold on the channels  
 __global__ void applyADCthreshold_kernel
 (const uint *xx_d, const uint *yy_d, const uint *layer_d, uint *adc, const uint wordCounter,
  const ADCThreshold adcThreshold, uint *xx_adc, uint *yy_adc ) {
@@ -298,7 +298,7 @@ __global__ void applyADCthreshold_kernel
 // Kernel to perform Raw to Digi conversion
 __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const uint *fedIndex, 
                                  uint *eventIndex,const uint stream, uint *XX, uint *YY, uint *moduleId, int *mIndexStart, 
-                                 int *mIndexEnd, uint *ADC, uint *layerArr) 
+                                 int *mIndexEnd, uint *ADC, uint *layerArr, uint *RawId) 
 {
   uint blockId  = blockIdx.x;
   uint eventno  = blockIdx.y + gridDim.y*stream;
@@ -328,8 +328,9 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
         XX[gIndex]    = 0;  // 0 is an indicator of a noise/dead channel
         YY[gIndex]    = 0; // skip these pixels during clusterization
         ADC[gIndex]   = 0;
-        layerArr[gIndex] = 0; 
-        moduleId[gIndex] = 9999; //9999 is the indication of bad module, taken care later  
+        layerArr[gIndex] = fedId;//0; 
+        moduleId[gIndex] = 9999; //9999 is the indication of bad module, taken care later
+        RawId[gIndex] = 0;  
         continue ;         // 0: bad word, 
       } 
       uint link  = getLink(ww);            // Extract link
@@ -382,11 +383,12 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
       
       Pixel globalPix = frameConversion(barrel, side, layer,rocIdInDetUnit, localPix);
       //if(threadId==0) printf("Event: %u fedId: %u\n",eventno, fedId );
-      XX[gIndex]    = globalPix.row+1  ; // origin shifting by 1 0-159
-      YY[gIndex]    = globalPix.col+1 ; // origin shifting by 1 0-415
+      XX[gIndex]    = globalPix.row;// +1  ; // origin shifting by 1 0-159
+      YY[gIndex]    = globalPix.col;// +1 ; // origin shifting by 1 0-415
       ADC[gIndex]   = getADC(ww);
-      layerArr[gIndex] = layer;
+      layerArr[gIndex] = fedId;//layer;
       moduleId[gIndex] = detId.moduleId;
+      RawId[gIndex] = detId.RawId;
     } // end of if(gIndex < end)
   } // end of for(int i =0;i<no_itr...)
   
@@ -410,7 +412,9 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
         atomicExch(&XX[gIndex+2], atomicExch(&XX[gIndex+1], XX[gIndex+2]));
         atomicExch(&YY[gIndex+2], atomicExch(&YY[gIndex+1], YY[gIndex+2]));
         atomicExch(&ADC[gIndex+2], atomicExch(&ADC[gIndex+1], ADC[gIndex+2]));
+        atomicExch(&RawId[gIndex+2], atomicExch(&RawId[gIndex+1], RawId[gIndex+2]));
         atomicExch(&layerArr[gIndex+2], atomicExch(&layerArr[gIndex+1], layerArr[gIndex+2]));
+         
       }
       __syncthreads();
       //rarest condition
@@ -422,7 +426,9 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
         atomicExch(&XX[gIndex+1], atomicExch(&XX[gIndex], XX[gIndex+1]));
         atomicExch(&YY[gIndex+1], atomicExch(&YY[gIndex], YY[gIndex+1]));
         atomicExch(&ADC[gIndex+1], atomicExch(&ADC[gIndex], ADC[gIndex+1]));
+        atomicExch(&RawId[gIndex+1], atomicExch(&RawId[gIndex], RawId[gIndex+1]));
         atomicExch(&layerArr[gIndex+1], atomicExch(&layerArr[gIndex], layerArr[gIndex+1]));
+         
       }
       // moduleId== 9999 then pixel is bad with x=y=layer=adc=0
       // this bad pixel will not affect the cluster, since for cluster
@@ -489,7 +495,7 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
   //const int nBlocks = fedCounter; // =108
   const int threads = 512;
   const int blockX = 108; // 108 feds
-  const int blockY = 100;   //blockIdx.y=2 is the no of events processed in kernel concurrently
+  const int blockY = 2;   //blockIdx.y=2 is the no of events processed in kernel concurrently
   dim3 gridsize(blockX, blockY); 
   //fedIndex[MAX_FED+nBlocks] = wordCounter;
   
@@ -499,11 +505,15 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
   cudaMemset(mIndexStart_d, -1, MSIZE);
   cudaMemset(mIndexEnd_d, -1, MSIZE);
   cudaMemcpy(eventIndex_d, eventIndex, (NEVENT+1)*sizeof(uint), cudaMemcpyHostToDevice);
+
+  // for debugging purpose only
+  uint *RawId_d;
+  cudaMalloc((void**)&RawId_d, wordCounter*sizeof(uint));
   
   //for(int i=0;i<NEVENT;i++) cout<<"Event: "<<i<<" offset: "<<
   int FSIZE = (blockY*2*MAX_FED +1)*sizeof(uint); // 0 to 150:fedId, 150:300: fedIndex
   
-	int fedOffset  = 0;
+  int fedOffset  = 0;
   int wordOffset = 0;
   int wordSize   = 0;
   for (int i=0; i<NSTREAM; i++) {
@@ -517,9 +527,9 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
     cudaMemcpyAsync(&fedIndex_d[fedOffset], &fedIndex[fedOffset], FSIZE, cudaMemcpyHostToDevice, stream[i]); 
     // Launch rawToDigi kernel
     RawToDigi_kernel<<<gridsize,threads,0, stream[i]>>>(Map,word_d, fedIndex_d,eventIndex_d,i, xx_d, yy_d, moduleId_d,
-                                        mIndexStart_d, mIndexEnd_d, adc_d,layer_d);
+                                        mIndexStart_d, mIndexEnd_d, adc_d,layer_d, RawId_d);
   }
-  //cudaDeviceSynchronize();
+  cudaDeviceSynchronize();
   checkCUDAError("Error in RawToDigi_kernel");
   for (int i = 0; i<NSTREAM; i++) {
     cudaStreamSynchronize(stream[i]);
@@ -530,33 +540,34 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
   cudaEventElapsedTime(&ms, start, stop);
   cout<<"Time for RawToDigi: "<<ms<<endl;
 
-  /*
+  
   uint size = wordCounter*sizeof(uint);
-  uint *xx,*yy,*adc,*fedId,*moduleId;
+  uint *xx,*yy,*adc,*fedId,*RawId;
   xx = (uint*)malloc(wordCounter*sizeof(uint));
   yy = (uint*)malloc(wordCounter*sizeof(uint));
   adc = (uint*)malloc(wordCounter*sizeof(uint));
   fedId = (uint*)malloc(wordCounter*sizeof(uint));
-  moduleId = (uint*)malloc(wordCounter*sizeof(uint));
+  RawId = (uint*)malloc(wordCounter*sizeof(uint));
   cudaMemcpy(xx,xx_d, size, cudaMemcpyDeviceToHost);
   cudaMemcpy(yy,yy_d, size, cudaMemcpyDeviceToHost);
   cudaMemcpy(adc,adc_d, size, cudaMemcpyDeviceToHost);
   cudaMemcpy(fedId,layer_d, size, cudaMemcpyDeviceToHost);
-  cudaMemcpy(moduleId,moduleId_d, size, cudaMemcpyDeviceToHost);
+  cudaMemcpy(RawId,RawId_d, size, cudaMemcpyDeviceToHost);
   //ofstream r2d("R2D_debug_fedId_xyadc_moduleId.txt");
-  ofstream R2D("R2D_GPU_v1.txt");
+  ofstream R2D("R2D_GPU.txt");
   R2D<<setw(6)<<"fedId"<<setw(14)<<"RawId"<<setw(6)<<"xx"<<setw(6)<<"yy"<<setw(6)<<"adc"<<endl;
   for(int i=0;i<wordCounter;i++) {
-    R2D<<setw(6)<<fedId[i]+1200<<setw(14)<<moduleId[i]<<setw(6)<<xx[i]<<setw(6)<<yy[i]<<setw(6)<<adc[i]<<endl;
+    R2D<<setw(6)<<fedId[i]+1200<<setw(14)<<RawId[i]<<setw(6)<<xx[i]<<setw(6)<<yy[i]<<setw(6)<<adc[i]<<endl;
   }
   R2D.close();
   free(xx);
   free(yy);
   free(adc);
   free(fedId);
-  free(moduleId); 
-  */
-
+  free(RawId); 
+  cudaFree(RawId_d);
+  
+  /*
   checkCUDAError("Error in memcpy for moduleStart_end H2D");
   // kernel to apply adc threashold on the channel
   ADCThreshold adcThreshold;
@@ -565,5 +576,6 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
   applyADCthreshold_kernel<<<numBlocks, numThreads>>>(xx_d, yy_d,layer_d,adc_d,wordCounter,adcThreshold, xx_adc, yy_adc);
   cudaDeviceSynchronize();
   checkCUDAError("Error in applying ADC threshold");
+  */
   //PixelCluster_Wrapper(xx_adc , yy_adc, adc_d,wordCounter, mIndexStart_d, mIndexEnd_d);
 }
