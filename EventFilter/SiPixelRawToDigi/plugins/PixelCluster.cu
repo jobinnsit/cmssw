@@ -25,10 +25,14 @@
 * than blockDim.x then extra clusters were formed. Now it is fixed 
 * by iterating upto xmax limit.
 * 
-* -------change lof---------
+* -------change log---------
 * Date 19/06/2017
 * Apply the module correction in cluster kernel itself
 * earlier it was done in RawToDigi
+*
+* --------change log--------
+* Date 28/06/2017
+* Process N Events in kernel concurrently
 */ 
 // System includes
 #include <stdio.h>
