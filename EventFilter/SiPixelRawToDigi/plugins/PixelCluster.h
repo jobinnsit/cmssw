@@ -3,7 +3,7 @@
 
 typedef unsigned int uint;
 // wrapper function to CPE kernel
-void CPE_wrapper(const uint total_cluster, const uint *ClusterId, const uint *Index, const uint *xx, const uint *yy,
+void CPE_wrapper(const uint total_cluster, const uint64 *ClusterId, const uint *Index, const uint *xx, const uint *yy,
                  const uint *adc );
              
 //const uint MAX_EVENT_SIZE  = 200000;   // Number of pixel hit in one events
@@ -14,5 +14,6 @@ const uint MAX_Y           = 416;
 
 //auxilary memory required for the clustering
 // since our sorting is not in-place sort.
-uint *Index, *d_xx1, *d_yy1, *d_gClusterId, *d_gClusterId1, *d_ADC1; 
+uint *Index, *d_xx1, *d_yy1, *d_ADC1; 
+uint64 *d_gClusterId, *d_gClusterId1; //uint64
 #endif
