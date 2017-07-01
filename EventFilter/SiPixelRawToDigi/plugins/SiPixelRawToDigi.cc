@@ -127,10 +127,11 @@ SiPixelRawToDigi::SiPixelRawToDigi( const edm::ParameterSet& conf )
   eventIndex[0] =0;
   // allocate memory for RawToDigi on GPU
   initDeviceMemory();
-  // allocate memory for CPE on GPU
-  //initDeviceMemCPE();
   // allocate auxilary memory for clustering
-  //initDeviceMemCluster();
+  initDeviceMemCluster();
+  // allocate memory for CPE on GPU
+  initDeviceMemCPE();
+  
 }
 
 
@@ -150,10 +151,11 @@ SiPixelRawToDigi::~SiPixelRawToDigi() {
   free(eventIndex);
   // free device memory used for RawToDigi on GPU
   freeMemory(); 
+   // free auxilary memory used for clustering
+  freeDeviceMemCluster();
   // free device memory used for CPE on GPU
-  //freeDeviceMemCPE();
-  // free auxilary memory used for clustering
-  //freeDeviceMemCluster();
+  freeDeviceMemCPE();
+ 
 }
 
 void

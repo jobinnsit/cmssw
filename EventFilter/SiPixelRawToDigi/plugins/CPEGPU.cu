@@ -9,21 +9,34 @@
 #include <vector>
 #include <cuda.h>
 #include <cuda_runtime.h>
+
+#include "CudaError.h"
+#include "PixelClusterUtil.h"
+#include "EventInfoGPU.h"
 //CPE specific
 #include "CPEGPU.h"
-#include "CudaError.h"
 // to intitalize memory
 #include "CPEGPUMem.h"
 using namespace std;
 
-
+__host__ __device__ uint getModule(uint64 clusterId) {
+  //uint event = ((clusterId  >> EVENT_shift) & EVENT_mask);
+  uint module = ((clusterId >> MODULE_shift) & MODULE_mask);
+  //uint xcor  = ((clusterId  >> XCOR_shift) & XCOR_mask);
+  //uint ycor  = ((clusterId  >> YCOR_shift) & YCOR_mask);
+  return module;
+}
+__host__ __device__ uint getEvent(uint64 clusterId) {
+  uint event = ((clusterId  >> EVENT_shift) & EVENT_mask);
+  return event;
+}
 // CPE kernel for a given cluster, it finds the xhit and yhit
 // xhit and yhit are determined by the equations given in paper (to be added)
 // and from CMSSW
 // Input: clusterId, Index, xx, yy, adc
 // output: xhit, yhit
 __global__ void CPE_kernel(const CPE_cut_Param cpe_cut, const DetDB *detDB, 
-                           const uint *ClusterId,const uint *Index,const uint *xx,const uint *yy,
+                           const uint64 *ClusterId,const uint *Index,const uint *xx,const uint *yy,
                            const uint *adc, float *xhit, float *yhit ) 
 {
    
@@ -39,7 +52,7 @@ __global__ void CPE_kernel(const CPE_cut_Param cpe_cut, const DetDB *detDB,
   uint blockId = blockIdx.x;
   //attention: index of last block 
   uint tid = threadIdx.x;
-  uint clusterId = ClusterId[blockId];
+  uint64 clusterId = ClusterId[blockId];
   if(clusterId==0) {
     xhit[blockId] = 0;
     yhit[blockId] = 0;
@@ -49,7 +62,7 @@ __global__ void CPE_kernel(const CPE_cut_Param cpe_cut, const DetDB *detDB,
   startIndex = Index[blockId];
 
   size  = Index[blockId+1] - startIndex;
-  moduleId = clusterId/1000000; // to get the moduleId devide by 10^6
+  moduleId = getModule(clusterId); // to get the moduleId devide by 10^6
   theThickness = (moduleId<1184) ? thicknessBarrel: thicknessForward;
   // Jobs in kernel are 
   // Compute lorentzAngle (independent method) -------by 1st thread
@@ -200,7 +213,7 @@ __device__ float genericPixelHit(uint size, float first_pix, float last_pix,
 }
 
 
-void CPE_wrapper(const uint total_cluster, const uint *ClusterId, const uint *Index, const uint *xx, const uint *yy,
+void CPE_wrapper(const uint total_cluster, const uint64 *ClusterId, const uint *Index, const uint *xx, const uint *yy,
                  const uint *adc ) 
 {
   cout<<"Inside CPE..."<<endl;
@@ -227,31 +240,26 @@ void CPE_wrapper(const uint total_cluster, const uint *ClusterId, const uint *In
   cout<<"CPE kernel execution finished!\n";
 
   // for validation purpose only
-  /*
   float *xhit, *yhit;
-  uint *ClusterId_h;
-  ClusterId_h = (uint*)malloc(total_cluster*sizeof(uint));
+  uint64 *ClusterId_h;
+  ClusterId_h = (uint64*)malloc(total_cluster*sizeof(uint64));
   xhit = (float*)malloc(total_cluster*sizeof(float));
   yhit = (float*)malloc(total_cluster*sizeof(float));
   cout<<"total_cluster: "<<total_cluster<<endl;
   cudaMemcpy(xhit, xhit_d, total_cluster*sizeof(float), cudaMemcpyDeviceToHost);
   cudaMemcpy(yhit, yhit_d, total_cluster*sizeof(float), cudaMemcpyDeviceToHost);
-  cudaMemcpy(ClusterId_h, ClusterId, total_cluster*sizeof(uint), cudaMemcpyDeviceToHost);
-  ofstream cpeFile("CPE_GPU_Output.txt");
-  cpeFile<<"moduleId   "<<"clusterId   "<<" xhit   "<<"  yhit  "<<endl;
+  cudaMemcpy(ClusterId_h, ClusterId, total_cluster*sizeof(uint64), cudaMemcpyDeviceToHost);
+  ofstream cpeFile("CPE_GPU.txt");
+  cpeFile<<"event    moduleId   "<<"clusterId   "<<" xhit   "<<"  yhit  "<<endl;
   for (int i = 0; i <total_cluster; i++) {
     //cout<<xhit[i]<<setw(12)<<yhit[i]<<endl;
-    cpeFile<<setw(4)<<ClusterId_h[i]/1000000<<setw(14)<<ClusterId_h[i]<<setw(20)<<xhit[i]<<setw(20)<<yhit[i]<<endl;
-    // to match the output formate with cmssw o/p
-    //uint moduleId = ClusterId[i]/1000000;
-    //uint clust_no = ClusterId[i] - moduleId*1000000;
-    //cout<<setw(14)<<moduleId<<setw(10)<<clust_no<<setw(20)<<xhit[i]<<setw(20)<<yhit[i]<<endl;
+    cpeFile<<setw(4)<<getEvent(ClusterId_h[i])<<setw(6)<<getModule(ClusterId_h[i])
+           <<setw(16)<<ClusterId_h[i]<<setw(20)<<xhit[i]<<setw(20)<<yhit[i]<<endl;
   }
   free(xhit);
   free(yhit);
   free(ClusterId_h);
   cpeFile.close();
-  */
   
 }
 
@@ -403,7 +411,7 @@ __device__ bool isItBigPixelInY( const int iybin ) {
 }
 
 void initDeviceMemCPE() {
-  const int MAX_CLUSTER = 100000;//10^5
+  const int MAX_CLUSTER = 30000*NEVENT;
   cudaMalloc((void**)&xhit_d, MAX_CLUSTER*sizeof(float));
   cudaMalloc((void**)&yhit_d, MAX_CLUSTER*sizeof(float));
   cudaMallocManaged((void**)&detDB, sizeof(DetDB));

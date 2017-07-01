@@ -31,8 +31,8 @@
 using namespace std;
 
 // forward declaration to be moved in header file
-//void PixelCluster_Wrapper(uint *xx_adc, uint *yy_adc, uint *adc_d,const uint wordCounter, 
-//                          const int *mIndexStart, const int *mIndexEnd);
+void PixelCluster_Wrapper(uint *xx_adc, uint *yy_adc, uint *adc_d,const uint wordCounter, 
+                          const int *mIndexStart, const int *mIndexEnd);
 
 /*
   This functions checks for cuda error
@@ -475,7 +475,7 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
                                     uint *eventIndex) { 
   
  
-  cout<<"Inside RawToDigi , total words: "<<wordCounter<<endl;
+  cout<<"Inside GPU RawToDigi , total words: "<<wordCounter<<endl;
   const int NSTREAM = 4;
   cudaStream_t stream[NSTREAM];
   for(int i=0;i<NSTREAM;i++) {
@@ -489,7 +489,7 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
   //const int nBlocks = fedCounter; // =108
   const int threads = 512;
   const int blockX = 108; // 108 feds
-  const int blockY = 100;   //blockIdx.y=2 is the no of events processed in kernel concurrently
+  const int blockY = 2;   //blockIdx.y=2 is the no of events processed in kernel concurrently
   dim3 gridsize(blockX, blockY); 
   //fedIndex[MAX_FED+nBlocks] = wordCounter;
   
@@ -528,8 +528,17 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
   cudaEventSynchronize(stop);
   float ms=0;
   cudaEventElapsedTime(&ms, start, stop);
-  cout<<"Time for RawToDigi: "<<ms<<endl;
+  //cout<<"Time for RawToDigi: "<<ms<<endl;
 
+  checkCUDAError("Error in memcpy for moduleStart_end H2D");
+  // kernel to apply adc threashold on the channel
+  ADCThreshold adcThreshold;
+  uint numThreads = 512;
+  uint numBlocks = wordCounter/512 +1;
+  applyADCthreshold_kernel<<<numBlocks, numThreads>>>(xx_d, yy_d,layer_d,adc_d,wordCounter,adcThreshold, xx_adc, yy_adc);
+  cudaDeviceSynchronize();
+  checkCUDAError("Error in applying ADC threshold");
+  
   /*
   uint size = wordCounter*sizeof(uint);
   uint *xx,*yy,*adc,*fedId,*moduleId;
@@ -557,13 +566,62 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
   free(moduleId); 
   */
 
-  checkCUDAError("Error in memcpy for moduleStart_end H2D");
-  // kernel to apply adc threashold on the channel
-  ADCThreshold adcThreshold;
-  uint numThreads = 512;
-  uint numBlocks = wordCounter/512 +1;
-  applyADCthreshold_kernel<<<numBlocks, numThreads>>>(xx_d, yy_d,layer_d,adc_d,wordCounter,adcThreshold, xx_adc, yy_adc);
-  cudaDeviceSynchronize();
-  checkCUDAError("Error in applying ADC threshold");
-  //PixelCluster_Wrapper(xx_adc , yy_adc, adc_d,wordCounter, mIndexStart_d, mIndexEnd_d);
+  // for validation purpose only
+  // for validation only
+  uint *xx,*yy;
+  int *mIndexStart, *mIndexEnd;
+  mIndexStart = (int*)malloc(MSIZE);
+  mIndexEnd   = (int*)malloc(MSIZE);
+
+  xx = (uint*)malloc(wordCounter*sizeof(uint));
+  yy = (uint*)malloc(wordCounter*sizeof(uint));
+
+  cudaMemcpy(mIndexStart, mIndexStart_d, MSIZE, cudaMemcpyDeviceToHost);
+  cudaMemcpy(mIndexEnd,   mIndexEnd_d,   MSIZE, cudaMemcpyDeviceToHost);
+  cudaMemcpy(xx,xx_d, wordCounter*sizeof(uint),cudaMemcpyDeviceToHost);
+  cudaMemcpy(yy,yy_d, wordCounter*sizeof(uint), cudaMemcpyDeviceToHost);
+
+  checkCUDAError("Error in memcpy for validation D2H");
+  for(int i=0;i<NMODULE*NEVENT;i++) {
+    // if module is empty then index are not updated in kernel
+    if(mIndexStart[i]==-1 && mIndexEnd[i]==-1) {
+      mIndexStart[i]=0;
+       mIndexEnd[i]=0;
+    }
+    else if(mIndexStart[i]==-1) {
+      mIndexStart[i] = mIndexEnd[i];
+    }
+    else if(mIndexEnd[i]==-1) {
+      mIndexEnd[i] = mIndexStart[i];
+    }
+    //cout<<"moduleId: "<<i<<" moduleStart[i]: "<<mIndexStart[i]<<" moduleEnd: "<<mIndexEnd[i]<<endl;
+  }
+
+  ofstream outFile;
+  int j=0;
+  outFile.open("Cluster_Input_CPU.txt");
+  outFile<<"xx"<<"\tyy"<<endl;
+  for(;j<wordCounter;j++) 
+    outFile <<setw(6)<<xx[j]<<setw(6)<<yy[j]<<endl;
+
+  outFile.close();  
+  ofstream mse;
+  j=0;
+
+  mse.open("ModuleStartEndIndex.txt");
+  mse<<"ModuleId\t"<<"ModuleStartIndex\t"<<"ModuleEndIndex"<<endl;
+  for(;j<NMODULE*NEVENT;j++) {
+    mse<<setw(4)<<j%NMODULE<<setw(8)<<mIndexStart[j]<<setw(8)<<mIndexEnd[j]<<endl;
+      //cout<<mIndexStart[i]<<"\t\t"<<mIndexEnd[i]<<endl;
+  }
+  mse.close(); 
+
+   free(xx);
+   free(yy);
+   free(mIndexStart);
+   free(mIndexEnd);
+  
+  //validation ends here
+
+  PixelCluster_Wrapper(xx_adc , yy_adc, adc_d,wordCounter, mIndexStart_d, mIndexEnd_d);
 }
