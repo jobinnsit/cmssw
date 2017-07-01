@@ -489,11 +489,11 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
   //const int nBlocks = fedCounter; // =108
   const int threads = 512;
   const int blockX = 108; // 108 feds
-  const int blockY = 2;   //blockIdx.y=2 is the no of events processed in kernel concurrently
+  const int blockY = 32;//NEVENT/NSTREAM;   //blockIdx.y=2 is the no of events processed in kernel concurrently
   dim3 gridsize(blockX, blockY); 
   //fedIndex[MAX_FED+nBlocks] = wordCounter;
   
-  int MSIZE = NMODULE*NEVENT*sizeof(int);
+  int MSIZE = NMODULE*NEVENT*sizeof(int)+sizeof(int);
   // initialize moduleStart & moduleEnd with some constant(-1)
   // just to check if it updated in kernel or not
   cudaMemset(mIndexStart_d, -1, MSIZE);
@@ -524,13 +524,7 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
   for (int i = 0; i<NSTREAM; i++) {
     cudaStreamSynchronize(stream[i]);
   }
-  cudaEventRecord(stop);
-  cudaEventSynchronize(stop);
-  float ms=0;
-  cudaEventElapsedTime(&ms, start, stop);
-  //cout<<"Time for RawToDigi: "<<ms<<endl;
-
-  checkCUDAError("Error in memcpy for moduleStart_end H2D");
+  
   // kernel to apply adc threashold on the channel
   ADCThreshold adcThreshold;
   uint numThreads = 512;
@@ -538,6 +532,12 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
   applyADCthreshold_kernel<<<numBlocks, numThreads>>>(xx_d, yy_d,layer_d,adc_d,wordCounter,adcThreshold, xx_adc, yy_adc);
   cudaDeviceSynchronize();
   checkCUDAError("Error in applying ADC threshold");
+
+  cudaEventRecord(stop);
+  cudaEventSynchronize(stop);
+  float ms=0;
+  cudaEventElapsedTime(&ms, start, stop);
+  cout<<"GPU Time(ms) for RawToDigi conversion: "<<ms<<endl;
   
   /*
   uint size = wordCounter*sizeof(uint);
@@ -565,7 +565,7 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
   free(fedId);
   free(moduleId); 
   */
-
+/*
   // for validation purpose only
   // for validation only
   uint *xx,*yy;
@@ -620,7 +620,7 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
    free(yy);
    free(mIndexStart);
    free(mIndexEnd);
-  
+*/
   //validation ends here
 
   PixelCluster_Wrapper(xx_adc , yy_adc, adc_d,wordCounter, mIndexStart_d, mIndexEnd_d);

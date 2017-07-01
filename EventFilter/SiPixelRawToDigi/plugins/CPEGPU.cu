@@ -218,29 +218,29 @@ void CPE_wrapper(const uint total_cluster, const uint64 *ClusterId, const uint *
 {
   cout<<"Inside CPE..."<<endl;
   // to measure the time
-  //cudaEvent_t start, stop;
-  //cudaEventCreate(&start);
-  //cudaEventCreate(&stop);
-  //float time_ms = 0.0f;
+  cudaEvent_t start, stop;
+  cudaEventCreate(&start);
+  cudaEventCreate(&stop);
+  float time_ms = 0.0f;
   // upload the CPE database
   
-  //cudaEventRecord(start);
+  cudaEventRecord(start);
   CPE_cut_Param cpe_cut;
   int no_blocks = total_cluster;
   int no_threads = 2;
   // xhit_d, yhit_d, contains output
   CPE_kernel<<<no_blocks, no_threads>>>(cpe_cut,detDB,ClusterId, Index, xx, yy, adc, xhit_d, yhit_d); 
   cudaDeviceSynchronize();
-  //cudaEventRecord(stop);
-  //cudaEventSynchronize(stop);
+  cudaEventRecord(stop);
+  cudaEventSynchronize(stop);
   
-  //cudaEventElapsedTime(&time_ms, start, stop);
-  //cout<<"CPE GPU Time(micro sec.):  "<<time_ms*1000<<endl;
+  cudaEventElapsedTime(&time_ms, start, stop);
+  cout<<"GPU Time(ms) for CPE:  "<<time_ms<<endl;
   checkCUDAError("Error in CPE_kernel");
   cout<<"CPE kernel execution finished!\n";
 
   // for validation purpose only
-  float *xhit, *yhit;
+/*  float *xhit, *yhit;
   uint64 *ClusterId_h;
   ClusterId_h = (uint64*)malloc(total_cluster*sizeof(uint64));
   xhit = (float*)malloc(total_cluster*sizeof(float));
@@ -260,6 +260,7 @@ void CPE_wrapper(const uint total_cluster, const uint64 *ClusterId, const uint *
   free(yhit);
   free(ClusterId_h);
   cpeFile.close();
+*/
   
 }
 
