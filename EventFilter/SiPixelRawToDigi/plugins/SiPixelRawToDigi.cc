@@ -42,7 +42,11 @@
 #include <chrono>
 #include <iostream>
 #include <fstream>
+
 // for GPU
+// for pinned memory
+#include <cuda.h> 
+#include <cuda_runtime.h>
 // Event Info
 #include "EventInfoGPU.h"
 // device memory intialization for RawTodigi
@@ -121,8 +125,11 @@ SiPixelRawToDigi::SiPixelRawToDigi( const edm::ParameterSet& conf )
   const int MAX_WORD = 2000;
   int WSIZE    = MAX_FED*MAX_WORD*NEVENT*sizeof(unsigned int);
   int FSIZE    = 2*MAX_FED*NEVENT*sizeof(unsigned int)+sizeof(unsigned int); 
-  word = (unsigned int*)malloc(WSIZE);
-  fedIndex =(unsigned int*)malloc(FSIZE);
+
+  //word = (unsigned int*)malloc(WSIZE);
+  cudaMallocHost((void**)&word, WSIZE);
+  //fedIndex =(unsigned int*)malloc(FSIZE);
+  cudaMallocHost((void**)&fedIndex, FSIZE);
   eventIndex = (unsigned int*)malloc((NEVENT+1)*sizeof(unsigned int));
   eventIndex[0] =0;
   // allocate memory for RawToDigi on GPU
@@ -146,8 +153,10 @@ SiPixelRawToDigi::~SiPixelRawToDigi() {
     hCPU->Write();
     hDigi->Write();
   }
-  free(word);
-  free(fedIndex);
+  //free(word);
+  cudaFreeHost(word);
+  //free(fedIndex);
+  cudaFreeHost(fedIndex);
   free(eventIndex);
   // free device memory used for RawToDigi on GPU
   freeMemory(); 
@@ -420,7 +429,6 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
     RawToDigi_Cluster_CPE_wrapper(wordCounterGPU, word, fedCounter,fedIndex, eventIndex);
     wordCounterGPU =  0;
   }
-
   fedCounter =0;
 } // end of produce function
 

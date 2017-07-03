@@ -98,7 +98,7 @@ void initDeviceMemory() {
   uint FSIZE = 2*MAX_FED*NEVENT*sizeof(uint)+sizeof(uint);
   
 
-  int MSIZE = NMODULE*NEVENT*sizeof(int);
+  int MSIZE = NMODULE*NEVENT*sizeof(int)+sizeof(int);
 
   cudaMalloc((void**)&eventIndex_d, (NEVENT+1)*sizeof(uint));
 
@@ -114,6 +114,10 @@ void initDeviceMemory() {
   cudaMalloc((void**)&moduleId_d,   MAX_WORD_SIZE);
   cudaMalloc((void**)&mIndexStart_d, MSIZE);
   cudaMalloc((void**)&mIndexEnd_d,   MSIZE);
+  // create stream for RawToDigi 
+  for(int i=0;i<NSTREAM;i++) {
+    cudaStreamCreate(&stream[i]);
+  }
   
   cout<<"Memory Allocated successfully !\n";
   // Upload the cabling Map
@@ -142,6 +146,11 @@ void freeMemory() {
   cudaFree(Map->rocInDet); 
   cudaFree(Map->moduleId);
   cudaFree(Map);
+
+  // destroy the stream
+  for(int i=0;i<NSTREAM;i++) {
+    cudaStreamDestroy(stream[i]);
+  }
   cout<<"Memory Released !\n";
 
 }
@@ -304,7 +313,7 @@ __global__ void RawToDigi_kernel(const CablingMap *Map,const uint *Word,const ui
   uint eventno  = blockIdx.y + gridDim.y*stream;
   
   //const uint eventOffset  = eventIndex[eventno]; 
-  uint fedOffset    = 2*150*eventno;
+  uint fedOffset    = 2*MAX_FED*eventno;
 
   uint fedId     = fedIndex[fedOffset+blockId];
   uint threadId  = threadIdx.x;
@@ -476,11 +485,6 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
   
  
   cout<<"Inside GPU RawToDigi , total words: "<<wordCounter<<endl;
-  const int NSTREAM = 4;
-  cudaStream_t stream[NSTREAM];
-  for(int i=0;i<NSTREAM;i++) {
-    cudaStreamCreate(&stream[i]);
-  }
 
   cudaEvent_t start, stop;
   cudaEventCreate(&start);
@@ -489,7 +493,7 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
   //const int nBlocks = fedCounter; // =108
   const int threads = 512;
   const int blockX = 108; // 108 feds
-  const int blockY = 32;//NEVENT/NSTREAM;   //blockIdx.y=2 is the no of events processed in kernel concurrently
+  const int blockY = NEVENT/NSTREAM;   //blockIdx.y=2 is the no of events processed in kernel concurrently
   dim3 gridsize(blockX, blockY); 
   //fedIndex[MAX_FED+nBlocks] = wordCounter;
   
@@ -507,7 +511,7 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
   int wordOffset = 0;
   int wordSize   = 0;
   for (int i=0; i<NSTREAM; i++) {
-    fedOffset  = blockY*2*150*i;
+    fedOffset  = blockY*2*MAX_FED*i;
     wordOffset = eventIndex[blockY*i];
     // total no of words in blockY event to be trasfered on device 
     wordSize   = (eventIndex[blockY*(i+1)] - eventIndex[blockY*i]); 
@@ -519,12 +523,13 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
     RawToDigi_kernel<<<gridsize,threads,0, stream[i]>>>(Map,word_d, fedIndex_d,eventIndex_d,i, xx_d, yy_d, moduleId_d,
                                         mIndexStart_d, mIndexEnd_d, adc_d,layer_d);
   }
-  //cudaDeviceSynchronize();
+  cudaDeviceSynchronize();
   checkCUDAError("Error in RawToDigi_kernel");
-  for (int i = 0; i<NSTREAM; i++) {
+  /*for (int i = 0; i<NSTREAM; i++) {
     cudaStreamSynchronize(stream[i]);
-  }
-  
+    checkCUDAError("Error in cuda stream cudaStreamSynchronize");
+  }*/
+ 
   // kernel to apply adc threashold on the channel
   ADCThreshold adcThreshold;
   uint numThreads = 512;
@@ -539,7 +544,7 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
   cudaEventElapsedTime(&ms, start, stop);
   cout<<"GPU Time(ms) for RawToDigi conversion: "<<ms<<endl;
   
-  /*
+/*
   uint size = wordCounter*sizeof(uint);
   uint *xx,*yy,*adc,*fedId,*moduleId;
   xx = (uint*)malloc(wordCounter*sizeof(uint));
