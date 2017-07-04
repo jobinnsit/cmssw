@@ -1,0 +1,26 @@
+********************************************************
+*                                                      *
+* Instructions to compile and run GPU RawToCPE package *
+*                                                      *
+* Output: ClusterId  xhit(in cm)  yhit(in cm)          *
+* This are stored in the device memory for further use *   
+*                                                      *
+********************************************************
+
+Input file: /home/fpantale/data/920/PU50/085D5AAF-9E40-E711-B12A-0025905A609E.root
+
+1. login to felk40
+   > ssh username@lxplus.cern.ch
+   > ssh felk40
+
+2. Download the code from repository
+   > cmsrel CMSSW_9_2_0
+   > cd src
+   > cmsenv
+   > git cms-merge-topic sushildubey171/GPU_RawToCPE_NEvents
+   > setup /home/fpantale/cuda_8.0.44.xml
+   > scram b -j8
+
+3. Run 
+   > cmsRun runRawToCPE_GPU_phase1.py   
+   
