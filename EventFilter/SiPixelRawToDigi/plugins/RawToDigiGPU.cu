@@ -523,12 +523,14 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
     RawToDigi_kernel<<<gridsize,threads,0, stream[i]>>>(Map,word_d, fedIndex_d,eventIndex_d,i, xx_d, yy_d, moduleId_d,
                                         mIndexStart_d, mIndexEnd_d, adc_d,layer_d);
   }
-  cudaDeviceSynchronize();
+  
   checkCUDAError("Error in RawToDigi_kernel");
-  /*for (int i = 0; i<NSTREAM; i++) {
+  for (int i = 0; i<NSTREAM; i++) {
     cudaStreamSynchronize(stream[i]);
     checkCUDAError("Error in cuda stream cudaStreamSynchronize");
-  }*/
+  }
+  checkCUDAError("Error in RawToDigi_kernel");
+  //cudaDeviceSynchronize();  
  
   // kernel to apply adc threashold on the channel
   ADCThreshold adcThreshold;
