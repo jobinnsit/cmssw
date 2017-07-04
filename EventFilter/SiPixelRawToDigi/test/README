@@ -22,5 +22,6 @@ Input file: /home/fpantale/data/920/PU50/085D5AAF-9E40-E711-B12A-0025905A609E.ro
    > scram b -j8
 
 3. Run 
+   > cd /EventFilter/SiPixelRawToDigi/test
    > cmsRun runRawToCPE_GPU_phase1.py   
    
