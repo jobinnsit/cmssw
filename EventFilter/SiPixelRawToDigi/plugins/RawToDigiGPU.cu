@@ -1,4 +1,19 @@
-/**2017-03-02  Sushil Dubey  <sdubey@felk40.cern.ch>
+/*Copyright 2017 Sushil Dubey, Shashi Dugad, TIFR
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+/*
  *
  * File Name: RawToDigiGPU.cu
  * Description: It converts Raw data into Digi data using GPU
@@ -486,10 +501,10 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
  
   cout<<"Inside GPU RawToDigi , total words: "<<wordCounter<<endl;
 
-  cudaEvent_t start, stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
-  cudaEventRecord(start);
+  // cudaEvent_t start, stop;
+  // cudaEventCreate(&start);
+  // cudaEventCreate(&stop);
+  // cudaEventRecord(start);
   //const int nBlocks = fedCounter; // =108
   const int threads = 512;
   const int blockX = 108; // 108 feds
@@ -540,11 +555,11 @@ void RawToDigi_Cluster_CPE_wrapper (const uint wordCounter, uint *word,
   cudaDeviceSynchronize();
   checkCUDAError("Error in applying ADC threshold");
 
-  cudaEventRecord(stop);
-  cudaEventSynchronize(stop);
-  float ms=0;
-  cudaEventElapsedTime(&ms, start, stop);
-  cout<<"GPU Time(ms) for RawToDigi conversion: "<<ms<<endl;
+  // cudaEventRecord(stop);
+  // cudaEventSynchronize(stop);
+  // float ms=0;
+  // cudaEventElapsedTime(&ms, start, stop);
+  // cout<<"GPU Time(ms) for RawToDigi conversion: "<<ms<<endl;
   
 /*
   uint size = wordCounter*sizeof(uint);

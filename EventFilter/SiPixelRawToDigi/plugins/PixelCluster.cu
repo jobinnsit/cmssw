@@ -1,4 +1,20 @@
-/** File Name: GPUCluster_cc5.cu
+/*Copyright 2017 Sushil Dubey, Shashi Dugad, TIFR
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+
+/*-----Change log----- 
 * Date: 01/03/2017
 * Clusterizer Algorithm which takes input from RawToDigi
 * and find clusters and subclusters.
@@ -25,7 +41,7 @@
 * than blockDim.x then extra clusters were formed. Now it is fixed 
 * by iterating upto xmax limit.
 * 
-* -------change lof---------
+* -------change log---------
 * Date 19/06/2017
 * Apply the module correction in cluster kernel itself
 * earlier it was done in RawToDigi
@@ -522,13 +538,13 @@ void PixelCluster_Wrapper(uint *d_xx, uint *d_yy, uint *d_ADC,const uint wordCou
                          const int *mIndexStart,const int *mIndexEnd) 
 {
     checkCUDAError("Error in RawToDigi, didn't enter in Cluster");    
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
+    // cudaEvent_t start, stop;
+    // cudaEventCreate(&start);
+    // cudaEventCreate(&stop);
     
     cout<<"Clustering started on GPU!"<<endl;
 
-    cudaEventRecord(start);
+    // cudaEventRecord(start);
     cudaMemset(d_gClusterId, 0, wordCounter*sizeof(uint64));
     checkCUDAError("Error in setting memory to 0");
 
@@ -578,11 +594,11 @@ void PixelCluster_Wrapper(uint *d_xx, uint *d_yy, uint *d_ADC,const uint wordCou
     //since origin is shifted by (1,1) move it back to (0,0) before giving it CPE
     shift_origin_kernel<<<N_blocks, N_threads>>>(wordCounter,d_xx,d_yy); 
     cudaDeviceSynchronize();
-    cudaEventRecord(stop);
-    cudaEventSynchronize(stop);
-    float ms=0;
-    cudaEventElapsedTime(&ms, start, stop);
-    cout<<"GPU Time(ms) for Clustering: "<<ms<<endl;
+    // cudaEventRecord(stop);
+    // cudaEventSynchronize(stop);
+    // float ms=0;
+    // cudaEventElapsedTime(&ms, start, stop);
+    // cout<<"GPU Time(ms) for Clustering: "<<ms<<endl;
     // only for validation purpose only
   /* 
     uint *xx,*yy,*adc_h, *Index_h;

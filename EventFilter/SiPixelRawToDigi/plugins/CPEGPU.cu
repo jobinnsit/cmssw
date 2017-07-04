@@ -1,5 +1,22 @@
-/* standalone CPE implementation on GPU
-*  after validation with CPU it will be integrated in CMSSW
+/*Copyright 2017 Sushil Dubey, Shashi Dugad, TIFR
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+// Input : ClusterId[], xx[], yy[]
+// Output: ClusterId  xhit(in cm)  yhit(in cm)
+/*
+* Cluster paramter Estimation
 */
 
 #include <iostream>
@@ -218,24 +235,23 @@ void CPE_wrapper(const uint total_cluster, const uint64 *ClusterId, const uint *
 {
   cout<<"Inside CPE..."<<endl;
   // to measure the time
-  cudaEvent_t start, stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
-  float time_ms = 0.0f;
-  // upload the CPE database
+  // cudaEvent_t start, stop;
+  // cudaEventCreate(&start);
+  // cudaEventCreate(&stop);
+  // float time_ms = 0.0f;
   
-  cudaEventRecord(start);
+  // cudaEventRecord(start);
   CPE_cut_Param cpe_cut;
   int no_blocks = total_cluster;
   int no_threads = 2;
   // xhit_d, yhit_d, contains output
   CPE_kernel<<<no_blocks, no_threads>>>(cpe_cut,detDB,ClusterId, Index, xx, yy, adc, xhit_d, yhit_d); 
   cudaDeviceSynchronize();
-  cudaEventRecord(stop);
-  cudaEventSynchronize(stop);
+  // cudaEventRecord(stop);
+  // cudaEventSynchronize(stop);
   
-  cudaEventElapsedTime(&time_ms, start, stop);
-  cout<<"GPU Time(ms) for CPE:  "<<time_ms<<endl;
+  // cudaEventElapsedTime(&time_ms, start, stop);
+  // cout<<"GPU Time(ms) for CPE:  "<<time_ms<<endl;
   checkCUDAError("Error in CPE_kernel");
   cout<<"CPE kernel execution finished!\n";
 
