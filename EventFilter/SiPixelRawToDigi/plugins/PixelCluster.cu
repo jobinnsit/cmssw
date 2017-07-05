@@ -13,39 +13,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Pixel clusteriser algorithm
+// Input: moduleStart[],moduleEnd[], 
+// xx[], yy[] with applied ADC threshold
+// Output: ClusterId[]
 
-/*-----Change log----- 
-* Date: 01/03/2017
-* Clusterizer Algorithm which takes input from RawToDigi
-* and find clusters and subclusters.
-* The output of RawToDigi servers input to this program.
-* Input: XX[], YY[], mIndexStart[], mIndexEnd[]
-* XX: 0 - 159 rows
-* YY: 0- 415  cols (source CMSSW ReadPixelCluster.cc)
-* origin is shifted by 1 along both the axes
-* Output: Cluster number associated with each pixels.
-*--------Change Log ---------
-* Date 06/03/2017
-* produces clusters and sub cluster each part of code is tested by 
-* printing the output each after cluster, after sorting and after
-* unique operation and sub-cluster-kernel tested and working fine
-* The illegal memory problem was due to the last block index in sub-cluster
-* kernel which was garbage value, temp solution skip last block
-*--------Change Log-----------
-* Date 11/04/2017
-* ADC array is added, now the cluster will also contain the adc of each pixel
-* 
-*-------change log--------------
-* Date 27/04/2017
-* Fixed bug in sub-clustering, if X- coordinate differs by more
-* than blockDim.x then extra clusters were formed. Now it is fixed 
-* by iterating upto xmax limit.
-* 
-* -------change log---------
-* Date 19/06/2017
-* Apply the module correction in cluster kernel itself
-* earlier it was done in RawToDigi
-*/ 
+
 // System includes
 #include <stdio.h>
 #include <malloc.h>
@@ -89,6 +62,7 @@ __global__ void shift_origin_kernel(uint wordCounter,uint *xx, uint *yy) {
     }
   }
 }
+
 /*
   This kernel sorts the xx[] and yy[] as per the sorted Index[]
   Input: Index[], xx[], yy[]
@@ -119,20 +93,15 @@ __global__ void sub_cluster_kernel80(const uint *Index, const uint *xx,
   uint blockid = blockIdx.x;
   uint start   = Index[blockid];
   uint end     = Index[blockid+1];
- // __shared__ uint moduleId;
   __shared__ uint64 old_clusterId;
   __shared__ int nstripx,nstripy;
 
-  //if(tid==0 && blockid<100) {
-    //printf("sc-kernel blockId: %d  totalBlock:  %d\n", blockid, gridDim.x);
-  //}
   // skip the empty clusters
   if(gClusterId[start] == 0) return;
   if(end==(start+1) ) return;
 
-  // sub-cluster kecd te  
   
-  //kernel to handle cluster with size <= 80
+  // kernel to handle cluster with size <= 80
   // found after analysing around 300 events
   if(end-start <= 80) {
 
@@ -178,7 +147,6 @@ __global__ void sub_cluster_kernel80(const uint *Index, const uint *xx,
       xp[161] =0;
       yp[416] =0;
       old_clusterId = gClusterId[start];
-      //moduleId = old_clusterId / 1000000; 
     }
     __syncthreads();  
   
@@ -233,6 +201,7 @@ __global__ void sub_cluster_kernel80(const uint *Index, const uint *xx,
           }
         }
       } //end of if(tid)
+
       // if the difference is grater that 80 then they are not 
       // covered by the thread (rarest case)
       if(xmax-xmin>=blockDim.x) { // if the difference is greater than blockDim.x
@@ -255,7 +224,6 @@ __global__ void sub_cluster_kernel80(const uint *Index, const uint *xx,
         uint64 new_clusterId=0;
         px = xp[xx[start + tid]-(xmin-1)] + xmin-1;            
         py = yp[yy[start + tid]-(ymin-1)] + ymin-1;         
-        //new_ClusterId = 1000000*(moduleId) + 1000 * py + px;
         new_clusterId = (old_clusterId & (~uint64(0) << MODULE_shift)) | (py << YCOR_shift) | (px << XCOR_shift);
         if(old_clusterId!=new_clusterId && (px!=0 && py!=0))
           gClusterId[start+tid] = new_clusterId;  
@@ -263,7 +231,7 @@ __global__ void sub_cluster_kernel80(const uint *Index, const uint *xx,
     }//end of if(nstripx==2 || nstripy==2) 
   } // end of if(end-start<=80)
   else if(blockid!=gridDim.x-1){  // sub-cluster kernel to handle cluster with size > 80
-    //f(tid==0) printf("inside else blockId: %d\n",blockid );
+    
     __shared__ uint xp[162],yp[417];
     __shared__ uint cluster_size,itrn;
     nstripx=0;  nstripy=0;
@@ -283,11 +251,9 @@ __global__ void sub_cluster_kernel80(const uint *Index, const uint *xx,
       cluster_size = end-start;
       itrn = cluster_size/blockDim.x + 1;
       old_clusterId = gClusterId[start];
-      //moduleId = old_clusterId / 1000000;
     }
-    //if(tid==0) printf("before intializatio in else block\n");
     __syncthreads();  
-    //if(tid==0) printf("after intializatio in else block\n");
+
     //  to find the projection
     #pragma unroll 
     for(uint i=0;i<itrn;i++) {
@@ -300,7 +266,7 @@ __global__ void sub_cluster_kernel80(const uint *Index, const uint *xx,
       }
       __syncthreads();
     }
-  //  if(tid==0) printf("after projection in else block\n");
+
     #pragma unroll
     for(uint j =0;j<6; j++) {  // generates gtid form 0.....416 from 80 threads
       uint gtid = 6*tid + j;
@@ -328,9 +294,8 @@ __global__ void sub_cluster_kernel80(const uint *Index, const uint *xx,
       }
       __syncthreads();
     } // end of for loop  
-  // if(tid==0) printf("after strip in else block\n");
-    //assign the cluster id to each pixel
-    // only if it divisible 
+
+    // assign the cluster id to each pixel only if it divisible 
     if(nstripx>1 || nstripy>1) {
       for(uint i=0;i<itrn;i++) {
         uint gtid = blockDim.x*i + tid;
@@ -345,7 +310,6 @@ __global__ void sub_cluster_kernel80(const uint *Index, const uint *xx,
         }
       }
     }
-  // if(tid==0) printf("after gClusterId in else block\n");
   } // end of else
 
 } // end of sub_cluster
@@ -408,15 +372,14 @@ void sub_cluster(uint *d_xx, uint *d_yy,const uint *d_ADC, uint *d_Index, uint64
   total_cluster = new_end.first - gClusterId;
   checkCUDAError(" Failed after unique operation");
  
-  //launch the kernel for subdivision
+  // launch the kernel for subdivision
   dim3 no_threads =  80; // maximum size of cluster found after analysis
   dim3 no_blocks  =  total_cluster;
-  //cout<<"Total_clusters: "<<total_cluster<<endl;
+  // cout<<"Total_clusters: "<<total_cluster<<endl;
   // Ignore first few cluster as they might contain 0s
   sub_cluster_kernel80<<<no_blocks,no_threads>>>(d_Index, d_xx1, d_yy1,wordCounter, d_gClusterId1);
   cudaDeviceSynchronize();
   checkCUDAError(" Failed after sub-cluster-kernel");
-
 } // End of sort_cluster
 
 __device__ uint64 getClusterId(uint event, uint module, uint y, uint x) {
@@ -433,9 +396,8 @@ __global__ void cluster_kernel(uint *xx, uint *yy, const int *mIndexStart,
                                const int *mIndexEnd, uint64 *gClusterId) 
 {
   __shared__ uint xp[MAX_X+1], yp[MAX_Y+1];   // Array to store x and y projection
-  uint moduleId  = blockIdx.x;                 // to get block id
+  uint moduleId  = blockIdx.x;                // to get block id
   uint event = blockIdx.y;
-
   uint tid = threadIdx.x;                     // to get thread id
   int  moduleBegin, moduleEnd;
   
@@ -463,15 +425,12 @@ __global__ void cluster_kernel(uint *xx, uint *yy, const int *mIndexStart,
   
   uint module_size = (moduleEnd - moduleBegin) + 1;
 
-  yp[tid] = 0;                // Initialize X projection to false
-  if(tid < MAX_X+1) {
-    xp[tid] = 0;              // Initialize Y projection to false
-  }
+  yp[tid] = 0;                    // Initialize Y projection to false
+  if(tid < MAX_X+1) {xp[tid] = 0;} // Initialize X projection to false
   
   __syncthreads();            // let all threads finish intialization
   // To get projection on x and y axis
-  // For loop is used to deal with module with hits more
-  // than blockDim.x
+  // For loop is used to deal with module with hits more than blockDim.x
   uint noItr = module_size/blockDim.x+1;
   for(uint i=0; i<noItr; i++) {
     uint idx = moduleBegin + tid + i*blockDim.x;
@@ -483,7 +442,6 @@ __global__ void cluster_kernel(uint *xx, uint *yy, const int *mIndexStart,
       gClusterId[idx] = 0;
     } // if(tid < module_size)
   } // End of for(uint i=0; i<noItr...
- //printf("After P:\n"); 
   __syncthreads();
 
   //  Store the unique strip# for all element in one strip.
@@ -538,10 +496,6 @@ void PixelCluster_Wrapper(uint *d_xx, uint *d_yy, uint *d_ADC,const uint wordCou
                          const int *mIndexStart,const int *mIndexEnd) 
 {
     checkCUDAError("Error in RawToDigi, didn't enter in Cluster");    
-    // cudaEvent_t start, stop;
-    // cudaEventCreate(&start);
-    // cudaEventCreate(&stop);
-    
     cout<<"Clustering started on GPU!"<<endl;
 
     // cudaEventRecord(start);
@@ -549,20 +503,18 @@ void PixelCluster_Wrapper(uint *d_xx, uint *d_yy, uint *d_ADC,const uint wordCou
     checkCUDAError("Error in setting memory to 0");
 
     // launch clustering kernel
-    int blockX  = MAX_MODULE_SIZE;   // no of blocks in x direction which is module
-    int blockY  = NEVENT; // no of blocks in Y direction which is events 
-    dim3 threadsize = NO_THREADS;        // no of threads
+    int blockX  = MAX_MODULE_SIZE;   // # of blocks in x direction are modules
+    int blockY  = NEVENT;            // # of blocks in Y direction are events 
+    dim3 threadsize = NO_THREADS;    // # of threads
     dim3 gridsize(blockX, blockY);
     
-    cluster_kernel <<< gridsize, threadsize>>>(d_xx, d_yy, mIndexStart, mIndexEnd, d_gClusterId);
+    cluster_kernel <<< gridsize, threadsize >>>(d_xx, d_yy, mIndexStart, mIndexEnd, d_gClusterId);
     cudaDeviceSynchronize();
     checkCUDAError(" Failed after main kernel call");
     
-    //cout<<"Finding Sub-clusters..."<<endl;
     sub_cluster(d_xx, d_yy, d_ADC, Index, d_gClusterId, wordCounter, d_gClusterId1, d_xx1, d_yy1, d_ADC1);
     
-    // FOR CPE
-    // formate the output of cluster before giving to CPE
+    // FOR CPE formate the output of cluster before giving to CPE
     // sort the clusterIds and corrseponding attributes
     // to get the start and end index of cluster
     createIndex(wordCounter, Index);
@@ -586,79 +538,22 @@ void PixelCluster_Wrapper(uint *d_xx, uint *d_yy, uint *d_ADC,const uint wordCou
     new_end = thrust::unique_by_key(ClusterId_ptr , ClusterId_ptr + wordCounter, Index_ptr );
     total_cluster = new_end.first - ClusterId_ptr;
     checkCUDAError(" Failed at Clustering");
-    //cout<<"Total_clusters after sub-clustering: "<<total_cluster<<endl;
-    //cout<<"Clustering finished on GPU!"<<endl;
-    // call CPE function
+    
+    // Call CPE function
     init_kernel<<<1,1>>>(wordCounter, total_cluster, Index);
-    //Index[total_cluster] = wordCounter;
-    //since origin is shifted by (1,1) move it back to (0,0) before giving it CPE
+    // Index[total_cluster] = wordCounter;
+    // since origin is shifted by (1,1) move it back to (0,0) before giving it CPE
     shift_origin_kernel<<<N_blocks, N_threads>>>(wordCounter,d_xx,d_yy); 
     cudaDeviceSynchronize();
-    // cudaEventRecord(stop);
-    // cudaEventSynchronize(stop);
-    // float ms=0;
-    // cudaEventElapsedTime(&ms, start, stop);
-    // cout<<"GPU Time(ms) for Clustering: "<<ms<<endl;
-    // only for validation purpose only
-  /* 
-    uint *xx,*yy,*adc_h, *Index_h;
-    uint64 *gClusterId;
-    int size = wordCounter+1;
-    xx = (uint*)malloc(size*sizeof(uint));
-    yy = (uint*)malloc(size*sizeof(uint));
-    adc_h = (uint*)malloc(size*sizeof(uint));
-    Index_h = (uint*)malloc(size*sizeof(uint));
-    gClusterId = (uint64*)malloc(size*sizeof(uint64));
-    
-    int count = wordCounter*sizeof(uint);
-    cudaMemcpy(xx, d_xx,count , cudaMemcpyDeviceToHost);
-    cudaMemcpy(yy, d_yy,count , cudaMemcpyDeviceToHost);
-    cudaMemcpy(Index_h, Index, count, cudaMemcpyDeviceToHost);
-    cudaMemcpy(gClusterId, d_gClusterId1, wordCounter*sizeof(uint64) , cudaMemcpyDeviceToHost);
-    cudaMemcpy(adc_h, d_ADC, count, cudaMemcpyDeviceToHost);
 
-    ofstream cluster_out;
-    
-    ofstream cfile; 
-    cfile.open("CPE_Input_CPU_PartA.txt");
-    cfile<<"Index\tClusterId"<<endl;
-    for (int i = 0; i < total_cluster; i++) {
-      //cfile<<setw(10)<<gClusterId[i]<<setw(6)<<xx[i]<<setw(6)<<yy[i]<<setw(10)<<adc_h[i]<<endl;
-      cfile<<setw(6)<<Index_h[i]<<setw(14)<<gClusterId[i]<<endl;
-    }
-    cfile.close();
-    cfile.open("CPE_Input_CPU_PartB.txt");
-    cfile<<"Index\tClusterId\t\txx\tyy\tADC"<<endl;
-    
-    cudaMemcpy(gClusterId, d_gClusterId, wordCounter*sizeof(uint64) , cudaMemcpyDeviceToHost);
-    cluster_out.open("Cluster_GPU.txt");
-    cluster_out<<"clusterId\t\t"<<"XX\t"<<"YY"<<endl;
-    
-    for (int i = 0; i < wordCounter; i++) {
-      if(gClusterId[i]==0) 
-        cluster_out<<setw(20)<<gClusterId[i]<<setw(6)<<xx[i]<<setw(6)<<yy[i]<<endl;
-      else 
-        cluster_out<<setw(20)<<gClusterId[i]<<setw(6)<<xx[i]+1<<setw(6)<<yy[i]+1<<endl;
-      
-      cfile<<setw(6)<<i<<setw(16)<<gClusterId[i]<<setw(6)<<xx[i]<<setw(6)<<yy[i]<<setw(10)<<adc_h[i]<<endl;
-    }
-    
-    cfile.close();
-    cluster_out.close();
-    free(xx);
-    free(yy);
-    free(adc_h);
-    free(Index_h);
-    free(gClusterId);
-  */
-    //validation ends here
+    // End of Clusterisation and starting CPE
     CPE_wrapper(total_cluster,d_gClusterId1, Index, d_xx, d_yy, d_ADC);
     
 } //end of pixel clusterizer
 
 void initDeviceMemCluster() {
-    const int MAX_FED = 150; // not all are present typically 108
-    const int MAX_WORD = 2000; // don't know the exact max word, for PU70 max was 2900
+    const int MAX_FED  = 150;   // not all are present typically 108
+    const int MAX_WORD = 2000;  // don't know the exact max word, for PU70 max was 2900
     const int size = MAX_FED*MAX_WORD*NEVENT*sizeof(uint);
     cudaMalloc((void**)&Index , size*sizeof(uint));
     cudaMalloc((void**)&d_xx1, size*sizeof(uint));

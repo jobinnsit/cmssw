@@ -19,7 +19,6 @@ limitations under the License.
 // common and constant parameters for all the DetId(modules)
 // extracted from the CMSSW CPE
 // all these parameters should be moved in python config
-//const int NMODULE = 1856; // 1856 module
 const int NTUPLE = 5;     // {X0, Y0, Z0, lorentshiftx, lorentShiftY}
 // pitch size aligned with C_9_2_0 
 const float pitchX = 0.01; // in cm instead of reading from database we have hard coded

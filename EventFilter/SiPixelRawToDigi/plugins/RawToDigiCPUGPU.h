@@ -1,3 +1,4 @@
+// Original authors: Shashi Dugad & Sushil Dubey, TIFR
 #ifndef RAWTODIGI_CPU_GPU_H
 #define RAWTODIGI_CPU_GPU_H
 

@@ -64,9 +64,9 @@ private:
   typedef cms_uint32_t Word32;
   typedef cms_uint64_t Word64;
 
-  unsigned int *word; // to hold input for rawtodigi on GPU
-  unsigned int *fedIndex; // to hold fed index inside word[] for rawtodigi on GPU
-  unsigned int *eventIndex;
+  unsigned int *word;        // to hold input for rawtodigi on GPU
+  unsigned int *fedIndex;    // to hold fed index inside word[] array for rawtodigi on GPU
+  unsigned int *eventIndex;  // to store staring index of each event in word[] array
   
 };
 #endif

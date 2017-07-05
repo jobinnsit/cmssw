@@ -13,11 +13,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Cluster paramter Estimation
 // Input : ClusterId[], xx[], yy[]
 // Output: ClusterId  xhit(in cm)  yhit(in cm)
-/*
-* Cluster paramter Estimation
-*/
 
 #include <iostream>
 #include <fstream>
@@ -32,7 +30,7 @@ limitations under the License.
 #include "EventInfoGPU.h"
 //CPE specific
 #include "CPEGPU.h"
-// to intitalize memory
+// To intitalize memory
 #include "CPEGPUMem.h"
 using namespace std;
 
@@ -47,6 +45,7 @@ __host__ __device__ uint getEvent(uint64 clusterId) {
   uint event = ((clusterId  >> EVENT_shift) & EVENT_mask);
   return event;
 }
+
 // CPE kernel for a given cluster, it finds the xhit and yhit
 // xhit and yhit are determined by the equations given in paper (to be added)
 // and from CMSSW
@@ -81,12 +80,10 @@ __global__ void CPE_kernel(const CPE_cut_Param cpe_cut, const DetDB *detDB,
   size  = Index[blockId+1] - startIndex;
   moduleId = getModule(clusterId); // to get the moduleId devide by 10^6
   theThickness = (moduleId<1184) ? thicknessBarrel: thicknessForward;
+
   // Jobs in kernel are 
   // Compute lorentzAngle (independent method) -------by 1st thread
   if(tid==0) {
-    //for(int i=startIndex; i<startIndex+size; i++) {
-      //printf("clusterId: %d  xx: %d   yy:  %d\n",clusterId, xx[i], yy[i] );
-    //}
     cotAngle = computeLorentzAngle(detDB,moduleId,startIndex,size, xx, yy,adc); 
     lorentShiftX = detDB->LorentzShiftX[moduleId];  // read from the database
     lorentShiftY = detDB->LorentzShiftY[moduleId];
@@ -97,6 +94,7 @@ __global__ void CPE_kernel(const CPE_cut_Param cpe_cut, const DetDB *detDB,
     lorentShiftY = lorentShiftY * widthLAFractionY;
     lorentShiftX = (moduleId<1184) ? lorentShiftX*widthLAFractionX_Barrel: lorentShiftX*widthLAFractionX_Forward;
   }
+
   // Find xmin, ymin, xmax, ymax (independent method) -------- by 2nd thread
   if(tid==1) {  
     min_max(startIndex, size, xx, xmin, xmax);
@@ -106,18 +104,20 @@ __global__ void CPE_kernel(const CPE_cut_Param cpe_cut, const DetDB *detDB,
     //printf("xmin: %f, xmax: %f,  ymin: %f, ymax: %f\n",xmin, xmax, ymin, ymax); 
   }
   __syncthreads();
+
   // Find Q_f and Q_l which depend upon output of step 2.----- by 1st thread
   if(tid==0) {
     collectCharge (xx, yy, adc, startIndex, size, xmin, xmax,
                  ymin, ymax, Q_l_X, Q_f_X, Q_l_Y, Q_f_Y );
-    //printf("Q_l_X: %f, Q_f_X: %f, Q_l_Y: %f, Q_f_Y: %f",Q_l_X, Q_f_X, Q_l_Y, Q_f_Y);
   }
+
   // Convert to localPosition in cm depends upon output of steps 2.-----by 2ns thread
   if(tid==1) {
     lp_min = localPositionInCm( xmin +1.0, ymin+1.0); // use the formula to convert
-    lp_max = localPositionInCm( xmax, ymax); // first pix and last pix
+    lp_max = localPositionInCm( xmax, ymax);          // first pix and last pix
   }
   __syncthreads();
+
   // Compute x_hit using the formula depends upon output of step 1 to 4 ----- by 1st thread
   if(tid==0) {
     float x_hit=genericPixelHit(sizeX, lp_min.x(), lp_max.x(),
@@ -165,12 +165,8 @@ __device__ float genericPixelHit(uint size, float first_pix, float last_pix,
                       float eff_charge_cut_high,
                       float size_cut)
 
-{ //charge_cut_high_x, charge_cut_low_x to be included
+{ 
   float geom_center = 0.5f*(first_pix + last_pix);
-  //#ifdef DEBUG_XHIT
-  //cout<<"geom_center: "<<geom_center<<endl;
-  //#endif
-  //cout<<"geom_center: "<<geom_center;
   // The case of only one pixel in this projection is separate.  Note that
   // here first_pix == last_pix, so the average of the two is still the
   // center of the pixel.
@@ -179,13 +175,10 @@ __device__ float genericPixelHit(uint size, float first_pix, float last_pix,
   // Width of the clusters minus the edge (first and last) pixels.
   // In the note, they are denoted x_F and x_L (and y_F and y_L)
   float W_inner = last_pix - first_pix;  // in cm
-  //cout<<"   W_inner: "<<W_inner;
+
   // Predicted charge width from geometry
   float W_pred = theThickness * cot_angle - lorentz_shift;// geometric correction (in cm)
-  //cout<<"  cot_angle: "<<cot_angle<<"   lorentShift:  "<<lorentz_shift;
-  //#ifdef DEBUG_XHIT
-  //cout<<"theThickness: "<<theThickness<<"  cot_angle: "<<cot_angle<<" lrentshift: "<<lorentz_shift<<"  size: "<<size<<endl;
-  //#endif 
+
   //--- Total length of the two edge pixels (first+last)
   float sum_of_edge = 2.0f;
 
@@ -195,7 +188,7 @@ __device__ float genericPixelHit(uint size, float first_pix, float last_pix,
   //--- The `effective' charge width -- particle's path in first and last pixels only
   if(W_pred<0) W_pred=0-W_pred;
   float W_eff = W_pred - W_inner;
-  //cout<<"W_inn: "<<W_inner<<" W_pre: "<<W_pred<<"  W_eff: "<<W_eff<<endl;
+
   //--- If the observed charge width is inconsistent with the expectations
   //--- based on the track, do *not* use W_pred-W_innner.  Instead, replace
   //--- it with an *average* effective charge width, which is the average
@@ -207,77 +200,30 @@ __device__ float genericPixelHit(uint size, float first_pix, float last_pix,
        ( W_eff/pitch > eff_charge_cut_high ) ) ) {
       W_eff = pitch * 0.5f * sum_of_edge;  // ave. length of edge pixels (first+last) (cm)
   }
-  
-  
-  
+    
   //--- Finally, compute the position in this projection
   float Qdiff = Q_l - Q_f;
   float Qsum  = Q_l + Q_f;
-  //cout<<"W_eff: "<<W_eff<<" size: "<<size<<" size_cut: "<<size_cut<<endl;
-  //cout<<"Q_f: "<<Q_f<<"  Q_l: "<<Q_l<<endl;
-
 
   //--- Temporary fix for clusters with both first and last pixel with charge = 0
   if(Qsum==0) Qsum=1.0f;
 
   float hit_pos = geom_center + 0.5f*(Qdiff/Qsum) * W_eff;
-  //cout<<" hit_pos: "<<setprecision(9)<<hit_pos<<endl;
-  //cout<<"\n";
-  //#ifdef DEBUG_XHIT
-  //cout<<"geom_center: "<<geom_center<<"  Q_diff: "<< Qdiff<<"  Qsum: "<<Qsum<<"  W_eff: "<<W_eff<<endl;
-  //#endif
   return hit_pos;
 }
 
 
 void CPE_wrapper(const uint total_cluster, const uint64 *ClusterId, const uint *Index, const uint *xx, const uint *yy,
                  const uint *adc ) 
-{
-  cout<<"Inside CPE..."<<endl;
-  // to measure the time
-  // cudaEvent_t start, stop;
-  // cudaEventCreate(&start);
-  // cudaEventCreate(&stop);
-  // float time_ms = 0.0f;
-  
-  // cudaEventRecord(start);
+{  
   CPE_cut_Param cpe_cut;
   int no_blocks = total_cluster;
   int no_threads = 2;
   // xhit_d, yhit_d, contains output
   CPE_kernel<<<no_blocks, no_threads>>>(cpe_cut,detDB,ClusterId, Index, xx, yy, adc, xhit_d, yhit_d); 
   cudaDeviceSynchronize();
-  // cudaEventRecord(stop);
-  // cudaEventSynchronize(stop);
-  
-  // cudaEventElapsedTime(&time_ms, start, stop);
-  // cout<<"GPU Time(ms) for CPE:  "<<time_ms<<endl;
   checkCUDAError("Error in CPE_kernel");
   cout<<"CPE kernel execution finished!\n";
-
-  // for validation purpose only
-/*  float *xhit, *yhit;
-  uint64 *ClusterId_h;
-  ClusterId_h = (uint64*)malloc(total_cluster*sizeof(uint64));
-  xhit = (float*)malloc(total_cluster*sizeof(float));
-  yhit = (float*)malloc(total_cluster*sizeof(float));
-  cout<<"total_cluster: "<<total_cluster<<endl;
-  cudaMemcpy(xhit, xhit_d, total_cluster*sizeof(float), cudaMemcpyDeviceToHost);
-  cudaMemcpy(yhit, yhit_d, total_cluster*sizeof(float), cudaMemcpyDeviceToHost);
-  cudaMemcpy(ClusterId_h, ClusterId, total_cluster*sizeof(uint64), cudaMemcpyDeviceToHost);
-  ofstream cpeFile("CPE_GPU.txt");
-  cpeFile<<"event    moduleId   "<<"clusterId   "<<" xhit   "<<"  yhit  "<<endl;
-  for (int i = 0; i <total_cluster; i++) {
-    //cout<<xhit[i]<<setw(12)<<yhit[i]<<endl;
-    cpeFile<<setw(4)<<getEvent(ClusterId_h[i])<<setw(6)<<getModule(ClusterId_h[i])
-           <<setw(16)<<ClusterId_h[i]<<setw(20)<<xhit[i]<<setw(20)<<yhit[i]<<endl;
-  }
-  free(xhit);
-  free(yhit);
-  free(ClusterId_h);
-  cpeFile.close();
-*/
-  
 }
 
 // compute cot alpha and beta for each cluster
@@ -415,7 +361,7 @@ __device__ LocalPoint localPositionInCm(float x, float y) {
 
 //-------------------------------------------------------------
 // Return the BIG pixel information for a given pixel
-//reference: http://cmslxr.fnal.gov/source/Geometry/TrackerGeometryBuilder/interface/RectangularPixelTopology.h?v=CMSSW_9_2_0#0119
+// reference: http://cmslxr.fnal.gov/source/Geometry/TrackerGeometryBuilder/interface/RectangularPixelTopology.h?v=CMSSW_9_2_0#0119
 __device__ bool isItBigPixelInX( const int ixbin ) {
   return (( ixbin == 79 ) || ( ixbin == 80 ));
 }
@@ -423,8 +369,6 @@ __device__ bool isItBigPixelInX( const int ixbin ) {
 __device__ bool isItBigPixelInY( const int iybin ) {
   int iybin0 = iybin%52;
   return(( iybin0 == 0 ) || ( iybin0 == 51 ));
-     // constexpr int bigYIndeces[]{0,51,52,103,104,155,156,207,208,259,260,311,312,363,364,415,416,511};
-     // return *std::lower_bound(std::begin(bigYIndeces),std::end(bigYIndeces),iybin) == iybin;
 }
 
 void initDeviceMemCPE() {

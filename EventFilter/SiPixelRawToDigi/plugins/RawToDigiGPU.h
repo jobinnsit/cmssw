@@ -12,6 +12,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
 #ifndef RAWTODIGIGPU_H
 #define RAWTODIGIGPU_H
 //typedef unsigned long long Word64;
@@ -72,27 +73,6 @@ const uint numColsInRoc = 52;
  const uint PXID_mask = ~(~uint(0) << PXID_bits);
  const uint ADC_mask  = ~(~uint(0) << ADC_bits); 
 
- //printf("LINK_mask: %u  ROC_mask: %u  COL_mask: %u  ROW_mask:  %u\n",LINK_mask, ROC_mask, COL_mask, ROW_mask );
- //printf("DCOL_mask: %u  PXID_mask: %u ADC_mask:  %u\n",DCOL_mask, PXID_mask, ADC_mask );
-
-/*
-__constant__ uint ADC_shift   = 0;
-__constant__ uint PXID_shift  = 8;
-__constant__ uint DCOL_shift  = 16;
-__constant__ uint ROC_shift   = 21;
-__constant__ uint LINK_shift  = 26;
-// special for layer 1 ROC
-__constant__ uint ROW_shift   = 8;
-__constant__ uint COL_shift   = 15;
-
-__constant__ uint LINK_mask = ~(~uint(0)<< LINK_bits1);
-__constant__ uint ROC_mask  = ~(~uint(0) << ROC_bits1);
-__constant__ uint COL_mask  = ~(~uint(0) << COL_bits1_l1);
-__constant__ uint ROW_mask  = ~(~uint(0) << ROW_bits1_l1);
-__constant__ uint DCOL_mask = ~(~uint(0) << DCOL_bits);
-__constant__ uint PXID_mask = ~(~uint(0) << PXID_bits);
-__constant__ uint ADC_mask  = ~(~uint(0) << ADC_bits);
-*/
 struct DetIdGPU {
   uint RawId;
   uint rocInDet;
@@ -109,8 +89,8 @@ struct  CablingMap{
   uint *rocInDet;
   uint *moduleId;
 };
-//CablingMap *Map;
 
+ //CablingMap *Map;
  //GPU specific
  uint *word_d, *fedIndex_d, *eventIndex_d;       // Device copy of input data
  uint *xx_d, *yy_d,*xx_adc, *yy_adc, *moduleId_d, *adc_d, *layer_d;  // Device copy

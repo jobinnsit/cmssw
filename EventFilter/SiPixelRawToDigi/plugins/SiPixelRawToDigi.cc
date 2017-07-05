@@ -5,6 +5,9 @@
 // 20-10-2010 Andrew York (Tennessee)
 // Jan 2016 Tamas Almos Vami (Tav) (Wigner RCP) -- Cabling Map label option
 
+// This code is an entry point for GPU based pixel track reconstruction for HLT
+// Modified by Sushil and Shashi for this purpose July-2017
+
 #include "DataFormats/Common/interface/Handle.h"
 #include "FWCore/Framework/interface/ESHandle.h"
 #include "FWCore/Framework/interface/ESTransientHandle.h"
@@ -43,12 +46,9 @@
 #include <iostream>
 #include <fstream>
 
-// for GPU
-// for pinned memory
-#include <cuda.h> 
-#include <cuda_runtime.h>
-// Event Info
-#include "EventInfoGPU.h"
+#include <cuda.h>             // for GPU
+#include <cuda_runtime.h>     // for pinned memory
+#include "EventInfoGPU.h"     // Event Info
 // device memory intialization for RawTodigi
 #include "RawToDigiMem.h"
 // device memory initialization for CPE
@@ -132,10 +132,13 @@ SiPixelRawToDigi::SiPixelRawToDigi( const edm::ParameterSet& conf )
   cudaMallocHost((void**)&fedIndex, FSIZE);
   eventIndex = (unsigned int*)malloc((NEVENT+1)*sizeof(unsigned int));
   eventIndex[0] =0;
+
   // allocate memory for RawToDigi on GPU
   initDeviceMemory();
+
   // allocate auxilary memory for clustering
   initDeviceMemCluster();
+
   // allocate memory for CPE on GPU
   initDeviceMemCPE();
   
@@ -153,18 +156,17 @@ SiPixelRawToDigi::~SiPixelRawToDigi() {
     hCPU->Write();
     hDigi->Write();
   }
-  //free(word);
+  // free(word);
   cudaFreeHost(word);
-  //free(fedIndex);
+  // free(fedIndex);
   cudaFreeHost(fedIndex);
   free(eventIndex);
   // free device memory used for RawToDigi on GPU
   freeMemory(); 
-   // free auxilary memory used for clustering
+  // free auxilary memory used for clustering
   freeDeviceMemCluster();
   // free device memory used for CPE on GPU
   freeDeviceMemCPE();
- 
 }
 
 void
@@ -211,7 +213,7 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
   //const uint32_t dummydetid = 0xffffffff;
   debug = edm::MessageDrop::instance()->debugEnabled;
 
-// initialize cabling map or update if necessary
+  // initialize cabling map or update if necessary
   if (recordWatcher.check( es )) {
     // cabling map, which maps online address (fed->link->ROC->local pixel) to offline (DetId->global pixel)
     edm::ESTransientHandle<SiPixelFedCablingMap> cablingMap;
@@ -220,7 +222,8 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
     cabling_ = cablingMap->cablingTree();
     LogDebug("map version:")<< cabling_->version();
   }
-// initialize quality record or update if necessary
+
+  // initialize quality record or update if necessary
   if (qualityWatcher.check( es )&&useQuality) {
     // quality info for dead pixel modules or ROCs
     edm::ESHandle<SiPixelQuality> qualityInfo;
@@ -258,8 +261,7 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
     LogDebug("SiPixelRawToDigi") << "region2unpack #feds: "<<regions_->nFEDs();
     LogDebug("SiPixelRawToDigi") << "region2unpack #modules (BPIX,EPIX,total): "<<regions_->nBarrelModules()<<" "<<regions_->nForwardModules()<<" "<<regions_->nModules();
   }
-  // GPU specific 
-  // data extraction for RawToDigi GPU
+  // GPU specific: Data extraction for RawToDigi GPU
   static unsigned int wordCounterGPU =0;
   unsigned int fedCounter = 0;
   const unsigned int MAX_FED = 150;
@@ -313,115 +315,17 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
       moreTrailers = trailerStatus;
     }
 
-    // data words
-    //LogTrace("")<<"data words: "<< (trailer-header-1);
-
     const  Word32 * bw =(const  Word32 *)(header+1);
     const  Word32 * ew =(const  Word32 *)(trailer);
     if ( *(ew-1) == 0 ) { ew--; }
     for (auto ww = bw; ww < ew; ++ww) {
-      //LogTrace("")<<"DATA: " <<  print(*word);
       word[wordCounterGPU++] = *ww;
     }
   }  // end of for loop
   
+ 
 
-  // original for loop
- /*
-  for (auto aFed = fedIds.begin(); aFed != fedIds.end(); ++aFed) {
-    int fedId = *aFed;
-    //cout<<"FedId: "<<fedId<<endl;
-    // for GPU
-    // first 150 index stores the fedId and next 150 will store the
-    // start index of word in that fed
-    fedIndex[fedCounter] = fedId-1200;
-    fedIndex[MAX_FED + fedCounter] = wordCounterGPU; // MAX_FED = 150
-    fedCounter++;
-    if(!usePilotBlade && (fedId==40) ) continue; // skip pilot blade data
-
-    if (regions_ && !regions_->mayUnpackFED(fedId)) continue;
-
-    if(debug) LogDebug("SiPixelRawToDigi")<< " PRODUCE DIGI FOR FED: " <<  fedId << endl;
-
-    PixelDataFormatter::Errors errors;
-
-    //get event data for this fed
-    const FEDRawData& fedRawData = buffers->FEDData( fedId );
-    //GPU specific
-    
-    //convert data to digi and strip off errors
-    formatter.interpretRawData( errorsInEvent, fedId, fedRawData, *collection, errors,word, wordCounterGPU);
-   
-    //pack errors into collection
-    if(includeErrors) {
-      typedef PixelDataFormatter::Errors::iterator IE;
-      for (IE is = errors.begin(); is != errors.end(); is++) {
-        uint32_t errordetid = is->first;
-        if (errordetid==dummydetid) {           // errors given dummy detId must be sorted by Fed
-          nodeterrors.insert( nodeterrors.end(), errors[errordetid].begin(), errors[errordetid].end() );
-        } 
-        else {
-          edm::DetSet<SiPixelRawDataError>& errorDetSet = errorcollection->find_or_insert(errordetid);
-          errorDetSet.data.insert(errorDetSet.data.end(), is->second.begin(), is->second.end());
-          // Fill detid of the detectors where there is error AND the error number is listed
-          // in the configurable error list in the job option cfi.
-          // Code needs to be here, because there can be a set of errors for each 
-          // entry in the for loop over PixelDataFormatter::Errors
-          if(!tkerrorlist.empty() || !usererrorlist.empty()){
-            DetId errorDetId(errordetid);
-            edm::DetSet<SiPixelRawDataError>::const_iterator itPixelError=errorDetSet.begin();
-            for(; itPixelError!=errorDetSet.end(); ++itPixelError){
-              // fill list of detIds to be turned off by tracking
-              if(!tkerrorlist.empty()) {
-                std::vector<int>::iterator it_find = find(tkerrorlist.begin(), tkerrorlist.end(), itPixelError->getType());
-               if(it_find != tkerrorlist.end()){
-              tkerror_detidcollection->push_back(errordetid);
-               }
-            }
-              // fill list of detIds with errors to be studied
-          if(!usererrorlist.empty()) {
-            std::vector<int>::iterator it_find = find(usererrorlist.begin(), usererrorlist.end(), itPixelError->getType());
-            if(it_find != usererrorlist.end()){
-            usererror_detidcollection->push_back(errordetid);
-            }
-          }
-         }
-       }
-      }
-     }
-    } // end of includeErrors
-     
-  }  // end of for loop
- */ 
-  /*
-  if(includeErrors) {
-    edm::DetSet<SiPixelRawDataError>& errorDetSet = errorcollection->find_or_insert(dummydetid);
-    errorDetSet.data = nodeterrors;
-  }
-  if (errorsInEvent) LogDebug("SiPixelRawToDigi") << "Error words were stored in this event";
-
-  if (theTimer) {
-    theTimer->stop();
-    LogDebug("SiPixelRawToDigi") << "TIMING IS: (real)" << theTimer->realTime() ;
-    ndigis += formatter.nDigis();
-    nwords += formatter.nWords();
-    LogDebug("SiPixelRawToDigi") << " (Words/Digis) this ev: "
-         <<formatter.nWords()<<"/"<<formatter.nDigis() << "--- all :"<<nwords<<"/"<<ndigis;
-    hCPU->Fill( theTimer->realTime() ); 
-    hDigi->Fill(formatter.nDigis());
-  }
-
-  //send digis and errors back to framework 
-  ev.put(std::move(collection));
-  if(includeErrors){
-    ev.put(std::move(errorcollection));
-    ev.put(std::move(tkerror_detidcollection));
-    ev.put(std::move(usererror_detidcollection), "UserErrorModules");
-  }
-  */
-  //GPU specific
-  
-  // RawToDigi -> clustering -> CPE
+  // GPU specific: RawToDigi -> clustering -> CPE
   eventCount++;
   eventIndex[eventCount] = wordCounterGPU;
   cout<<"Data read for event: "<<eventCount<<endl;
