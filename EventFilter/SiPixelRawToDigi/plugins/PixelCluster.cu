@@ -85,7 +85,7 @@ __global__ void copy_kernel(const uint *Index,const uint *xx, const uint *yy,
   Output: gClusterId[]
 
 */
-__global__ void sub_cluster_kernel80(const uint *Index, const uint *xx, 
+__global__ void sub_cluster_kernel(const uint *Index, const uint *xx, 
                                      const uint *yy,const uint gpCounter,
                                      uint64 *gClusterId) 
 {
@@ -102,6 +102,7 @@ __global__ void sub_cluster_kernel80(const uint *Index, const uint *xx,
 
   
   // kernel to handle cluster with size <= 80
+  // this is the maximum cluster size
   // found after analysing around 300 events
   if(end-start <= 80) {
 
@@ -377,7 +378,7 @@ void sub_cluster(uint *d_xx, uint *d_yy,const uint *d_ADC, uint *d_Index, uint64
   dim3 no_blocks  =  total_cluster;
   // cout<<"Total_clusters: "<<total_cluster<<endl;
   // Ignore first few cluster as they might contain 0s
-  sub_cluster_kernel80<<<no_blocks,no_threads>>>(d_Index, d_xx1, d_yy1,wordCounter, d_gClusterId1);
+  sub_cluster_kernel<<<no_blocks,no_threads>>>(d_Index, d_xx1, d_yy1,wordCounter, d_gClusterId1);
   cudaDeviceSynchronize();
   checkCUDAError(" Failed after sub-cluster-kernel");
 } // End of sort_cluster

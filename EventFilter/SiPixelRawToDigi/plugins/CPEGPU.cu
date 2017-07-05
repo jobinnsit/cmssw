@@ -47,8 +47,7 @@ __host__ __device__ uint getEvent(uint64 clusterId) {
 }
 
 // CPE kernel for a given cluster, it finds the xhit and yhit
-// xhit and yhit are determined by the equations given in paper (to be added)
-// and from CMSSW
+// given in CMSSW CPE package(SiPixelRecHits)
 // Input: clusterId, Index, xx, yy, adc
 // output: xhit, yhit
 __global__ void CPE_kernel(const CPE_cut_Param cpe_cut, const DetDB *detDB, 
@@ -223,7 +222,7 @@ void CPE_wrapper(const uint total_cluster, const uint64 *ClusterId, const uint *
   CPE_kernel<<<no_blocks, no_threads>>>(cpe_cut,detDB,ClusterId, Index, xx, yy, adc, xhit_d, yhit_d); 
   cudaDeviceSynchronize();
   checkCUDAError("Error in CPE_kernel");
-  cout<<"CPE kernel execution finished!\n";
+  cout<<"CPE execution finished!\n";
 }
 
 // compute cot alpha and beta for each cluster
@@ -339,7 +338,7 @@ __device__ LocalPoint localPositionInCm(float x, float y) {
   //auto const j = std::lower_bound(std::begin(bigYIndeces),std::end(bigYIndeces),binoffy);
   //if (*j==binoffy) { local_pitchy  *= 2 ;}
   //binoffy += (j-bigYIndeces);
-  if(binoffy>416) binoffy=433; //this is due to the bug in cmssw cpe, since origin is shifted by 1 remove this in cmssw
+  if(binoffy>416) binoffy=432; //this is due to the bug in cmssw cpe, since origin is shifted by 1 remove this in cmssw
   else if(!(binoffy%52)) {
     binoffy += ((int)(binoffy/52))*2;
     local_pitchy  *= 2 ;
@@ -390,6 +389,11 @@ void uploadCPE_db(DetDB *detDB) {
   uint moduleId,rawId,i=0;
   float X0, Y0, Z0, Rdet, Zdet, LShiftX, LShiftY;
   ifstream ifile("Pixel_CPE_Phase1_database_C_920.dat");
+  if(!ifile) {
+    cout<<"CPE database file does not exit !"<<endl;
+    cout<<"File: Pixel_CPE_Phase1_database_C_920.dat"<<endl;
+    exit(1);
+  }
   string str;
   getline(ifile, str);
   while(!ifile.eof()) {

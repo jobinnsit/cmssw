@@ -69,6 +69,11 @@ void checkCUDAError(const char *msg) {
 void initCablingMap() {
   ifstream mapFile;
   mapFile.open("Pixel_Phase1_Raw2Digi_GPU_Cabling_Map.dat");
+  if(!mapFile) {
+    cout<<"Cabling Map file does not exist !"<<endl;
+    cout<<"File:Pixel_Phase1_Raw2Digi_GPU_Cabling_Map.dat"<<endl;
+    exit(1);
+  }
   string str;
   getline(mapFile, str);
   uint Index, FedId, Link, idinLNK, B_F, RawID, idinDU, ModuleID;
