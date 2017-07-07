@@ -1,0 +1,5 @@
+Performs validation of GPU version of RawToDigi output 
+with CPU RawToDigi output
+See the file Run_RawToDigi_CPU_GPU_Validate_NEvents.txt in
+directory validation_R2D for more details.
+

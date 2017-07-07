@@ -1,0 +1,50 @@
+**************************************************************
+*  Instruction to run CPU and GPU version of CMSSW RawToDigi *
+*                                                            *
+*  Part A: Generate output files                             *
+*  Input Dataset:  /store/relval/CMSSW_9_2_0/RelValTTbar_13/GEN-SIM-DIGI-RAW/PU25ns_91X_upgrade2017_realistic_v5_PU50-v1/10000/
+*  Output: R2D_CPU.txt and R2D_GPU.txt                       *
+*                                                            *
+*  Part B: Perform validation                                *
+*  Input:  R2D_CPU.txt and R2D_GPU.txt                       *
+*  Output: Displayed on the screen                           *
+*                                                            *
+**************************************************************
+
+*******************************************************
+* Part A: Generate CPU and GPU RawToDigi output files *
+*******************************************************
+
+0. Login to lxlpus
+   > ssh username@lxplus.cern.ch
+   > ssh felk40
+
+1. Download the package
+   > cmsrel CMSSW_9_2_0  
+   > cd CMSSW_9_2_0/src
+   > cmsenv
+   > git cms-merge-topic sushildubey171:Val_RawToDigi_NEvents
+   > scram setup /home/fpantale/cuda_8.0.44.xml
+
+2. Compile and Run
+   > scram b -j8
+   > cd EventFilter/SiPixelRawToDigi/test
+   > cmsRun runRawToDigi_phase1.py
+
+3. Output Files: R2D_CPU.txt, R2D_GPU.txt  
+
+
+
+******************************
+* Part B: Perform validation *
+******************************
+
+1. Copy the above 2 output files in validation_R2D
+   > cp -p R2D_*PU.txt validation_R2D/
+   > cd validation_R2D
+
+2. Compile and Run validation code 
+   > g++ -std=c++11 r2d_cpu_gpu_validate_using_tuple.cpp
+   > ./a.out 
+
+3. See the output on screen   
