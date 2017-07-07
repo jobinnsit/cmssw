@@ -1,0 +1,116 @@
+****************************************************************************
+*  Instruction to run standalone CPU clustering & CPE code and GPU version
+*  of CMSSW clustering & CPE
+* 
+*  Input dataset:/store/relval/CMSSW_9_2_0/RelValTTbar_13/GEN-SIM-DIGI-RAW/PU25ns_91X_upgrade2017_realistic_v5_PU50-v1/10000/
+*  
+*  A: For Cluster
+*  
+*  Part A1: Generate GPU "Cluster and CPE" Output and Input for Standalone CPU "Cluster and CPE"
+*  Input  : Above root file
+*  Output : Cluster_GPU.txt,              CPE_GPU.txt, 
+            ModuleStartEndIndex.txt,      Cluster_Input_CPU.txt,   
+            CPE_Input_CPU_PartA.txt,      CPE_Input_CPU_PartB.txt
+*
+*  Part A2: Generate Standalone CPU Cluster output
+*  Input  : Cluster_Input_CPU.txt, ModuleStartEndIndex.txt
+*  Output : Cluster_CPU.txt
+*  
+*  Part A3: Validate CPU vs GPU cluster output 
+*  Input  : Cluster_CPU.txt, Cluster_GPU.txt
+*  Output : Displayed on the screen
+* 
+*
+*
+*  B: For CPE
+*  
+*  Part B1: Generate standalone CPU CPE output
+*  Input  : CPE_Input_CPU_PartA.txt, CPE_Input_CPU_PartB.txt
+*  Output : CPE_CPU.txt
+* 
+*  Part B2: Validate CPU vs GPU Output 
+*  Input  : CPE_CPU.txt, CPE_GPU.txt
+*  Output : Displayed on the screen
+*
+********************************************************************
+
+
+A. For Cluster
+
+Part A1.: Generate GPU Cluster output and Input for standalone CPU Cluster
+--------------------------------------------------------------------------
+
+0. Login to lxlpus
+   > ssh username@lxplus.cern.ch
+   > ssh felk40 
+
+1. Download the package
+   > cmsrel CMSSW_9_2_0 
+   > cd CMSSW_9_2_0/src
+   > cmsenv
+   > git cms-merge-topic sushildubey171:Val_Cluster_CPE_NEvents
+   > scram setup /home/fpantale/cuda_8.0.44.xml
+
+2. Compile and Run
+   > scram b -j8
+   > cd EventFilter/SiPixelRawToDigi/test
+   > cmsRun runRawToCPE_GPU_phase1.py
+
+3. Output Files: Cluster_GPU.txt,              CPE_GPU.txt, 
+                 Cluster_Input_CPU.txt,        ModuleStartEndIndex.txt,
+                 CPE_Input_CPU_PartA.txt,      CPE_Input_CPU_PartB.txt
+
+
+Part A2: Generate standalone CPU Cluster output
+-----------------------------------------------
+
+1. Copy the input files to the validation directory
+   > cp -p Cluster_Input_CPU.txt   validation_Cluster_CPE/
+   > cp -p ModuleStartEndIndex.txt validation_Cluster_CPE/
+
+2. Compile and Run the standalone CPU cluster program
+   > cd validation_Cluster_CPE/
+   > g++ -O2 -std=c++11 CPUCluster_v04.cpp
+   > ./a.out
+
+3. Output file: Cluster_CPU.txt   
+
+
+Part A3: Validate CPU vs GPU cluster output
+--------------------------------------------
+
+1. Compile and Run the Cluster validation program
+   > cp -p ../Cluster_GPU.txt .
+   > g++ -O2 -std=c++11 cluster_cpu_gpu_validate_using_tuple_v1.cpp
+   > ./a.out
+
+2. See the output on the screen
+
+
+*********************************************************
+
+
+Part B1: Generate standalone CPU CPE output
+-------------------------------------------
+
+1. Copy the input files from Part A1.3 to the validation directory
+   > cp -p ../CPE_Input_CPU_Part*.txt .
+
+2. Compile and run the standalone CPU CPE program
+   > g++ -O2 -std=c++11 CPECPU.cpp
+
+3. Output file: CPE_CPU.txt 
+
+----------------------------------------------------
+
+Part B2: Validate CPU vs GPU CPE output
+---------------------------------------
+
+1. Compile and Run the CPE validation program
+   > cp -p ../CPE_GPU.txt .
+   > g++ -std=c++11 cpe_cpu_gpu_validate.cpp
+   > ./a.out
+
+2. See the output on the screen
+
+Cheers!!

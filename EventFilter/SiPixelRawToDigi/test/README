@@ -1,0 +1,8 @@
+Peform output validation of GPU version of Cluster and CPE 
+with CPU version of Cluster and CPE.
+
+See the file Run_cluster_CPE_CPU_GPU_Validate_NEvents.txt 
+in directory validation_Cluster_CPE/ for more details.
+
+
+

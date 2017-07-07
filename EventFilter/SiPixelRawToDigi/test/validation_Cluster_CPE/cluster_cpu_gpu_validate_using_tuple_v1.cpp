@@ -10,8 +10,6 @@
 // > g++ -O2 cluster_cpu_gpu_validate_using_tuple.cpp -std=gnu++11 -o out
 // > ./out
 
-//This is my first tuple code for comparing data obtained
-//from Cluster_CPU and Cluster_GPU codes !!!
 
 using namespace std;
 typedef unsigned long long uint64;
@@ -41,7 +39,7 @@ int main(void){
   while(!inCluster_CPU.eof()) {
     inCluster_CPU >> ClusterID >> XX >> YY;
     icnt++;
-    if(XX==0 && YY==0) continue;
+    if(ClusterID==1) continue; // ignore the false cluster
     cpu_data.push_back(make_tuple(ClusterID, XX, YY));
   }
   inCluster_CPU.close();
@@ -55,7 +53,7 @@ int main(void){
   while(!inCluster_GPU.eof()) {
     icnt++;
     inCluster_GPU >> ClusterID >> XX >> YY;
-    if(ClusterID==0 && XX==0 && YY==0)continue;
+    if(ClusterID==0)continue; // ignore the bad cluster
     gpu_data.push_back(make_tuple(ClusterID, XX, YY));
   }
   inCluster_GPU.close();
@@ -85,7 +83,7 @@ int main(void){
   cout << "Total Number of CPU Clusters=" << tot_cpu_clusters << endl;
   cout << endl << endl;
   if(icpu_mismatch==0){
-    cout << "Matching CPU Cluster data with GPU Cluster data complted succesfully!!!";
+    cout << "Matching CPU Cluster data with GPU Cluster data completed succesfully!!!";
     cout << endl << endl << endl;
   }
 
@@ -114,5 +112,7 @@ int main(void){
   cout << endl << endl;
   if(igpu_mismatch==0)cout << "Matching GPU Cluster data with CPU Cluster data complted succesfully!!!" << endl << endl;
   if(icpu_mismatch==0 && igpu_mismatch==0)cout << "Congratulations: Validation of CPU and GPU Cluster data completed succesfully" << endl;
+  cout<<"Total clusters: "<<max(tot_cpu_clusters, tot_gpu_clusters)<<endl;
+  cout<<"Number of cluster matching: "<<min(tot_cpu_clusters, tot_gpu_clusters)<<endl;
 
 }//int main(void){
