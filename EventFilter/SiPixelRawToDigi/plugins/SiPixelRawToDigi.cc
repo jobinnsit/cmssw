@@ -211,7 +211,7 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
                               const edm::EventSetup& es) 
 {
   //const uint32_t dummydetid = 0xffffffff;
-  debug = edm::MessageDrop::instance()->debugEnabled;
+  //debug = edm::MessageDrop::instance()->debugEnabled;
 
   // initialize cabling map or update if necessary
   if (recordWatcher.check( es )) {
@@ -219,11 +219,11 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
     edm::ESTransientHandle<SiPixelFedCablingMap> cablingMap;
     es.get<SiPixelFedCablingMapRcd>().get( cablingMapLabel, cablingMap ); //Tav
     fedIds   = cablingMap->fedIds();
-    cabling_ = cablingMap->cablingTree();
-    LogDebug("map version:")<< cabling_->version();
+    // cabling_ = cablingMap->cablingTree();
+    // LogDebug("map version:")<< cabling_->version();
   }
 
-  // initialize quality record or update if necessary
+/*  // initialize quality record or update if necessary
   if (qualityWatcher.check( es )&&useQuality) {
     // quality info for dead pixel modules or ROCs
     edm::ESHandle<SiPixelQuality> qualityInfo;
@@ -232,12 +232,12 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
     if (!badPixelInfo_) {
       edm::LogError("SiPixelQualityNotPresent")<<" Configured to use SiPixelQuality, but SiPixelQuality not present"<<endl;
     }
-  }
+  }*/
 
   edm::Handle<FEDRawDataCollection> buffers;
   ev.getByToken(tFEDRawDataCollection, buffers);
 
-  // create product (digis & errors)
+  /*// create product (digis & errors)
   auto collection = std::make_unique<edm::DetSetVector<PixelDigi>>();
   // collection->reserve(8*1024);
   auto errorcollection = std::make_unique<edm::DetSetVector<SiPixelRawDataError>>();
@@ -260,12 +260,13 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
     formatter.setModulesToUnpack(regions_->modulesToUnpack());
     LogDebug("SiPixelRawToDigi") << "region2unpack #feds: "<<regions_->nFEDs();
     LogDebug("SiPixelRawToDigi") << "region2unpack #modules (BPIX,EPIX,total): "<<regions_->nBarrelModules()<<" "<<regions_->nForwardModules()<<" "<<regions_->nModules();
-  }
+  }*/
   // GPU specific: Data extraction for RawToDigi GPU
   static unsigned int wordCounterGPU =0;
   unsigned int fedCounter = 0;
   const unsigned int MAX_FED = 150;
   static int eventCount = 0;
+  bool errorsInEvent = false;
   
   ErrorChecker errorcheck;
   for (auto aFed = fedIds.begin(); aFed != fedIds.end(); ++aFed) {
