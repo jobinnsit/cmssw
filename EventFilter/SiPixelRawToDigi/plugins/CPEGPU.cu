@@ -52,37 +52,40 @@ __host__ __device__ uint getEvent(uint64 clusterId) {
 // output: xhit, yhit
 __global__ void CPE_kernel(const CPE_cut_Param cpe_cut, const DetDB *detDB, 
                            const uint64 *ClusterId,const uint *Index,const uint *xx,const uint *yy,
-                           const uint *adc, float *xhit, float *yhit ) 
+                           const uint *adc, const uint numberOfClusters, float *xhit, float *yhit ) 
 {
    
-  __shared__ float xmin, xmax;
-  __shared__ float ymin, ymax;
-  __shared__ float Q_l_X, Q_f_X, Q_l_Y, Q_f_Y;
-  __shared__ float sizeX, sizeY;
-  __shared__ LocalPoint lp_min, lp_max;
-  __shared__ LorentzAngle cotAngle;
-  __shared__ float lorentShiftX , lorentShiftY, shiftX, shiftY;
+  float xmin, xmax;
+  float ymin, ymax;
+  float Q_l_X, Q_f_X, Q_l_Y, Q_f_Y;
+  float sizeX, sizeY;
+  LocalPoint lp_min, lp_max;
+  LorentzAngle cotAngle;
+  float lorentShiftX , lorentShiftY, shiftX, shiftY;
   float theThickness;
-
-  uint blockId = blockIdx.x;
-  //attention: index of last block 
-  uint tid = threadIdx.x;
-  uint64 clusterId = ClusterId[blockId];
-  if(clusterId==0) {
-    xhit[blockId] = 0;
-    yhit[blockId] = 0;
-    return ;
-  }
   uint startIndex, size, moduleId;
-  startIndex = Index[blockId];
 
-  size  = Index[blockId+1] - startIndex;
-  moduleId = getModule(clusterId); // to get the moduleId devide by 10^6
-  theThickness = (moduleId<1184) ? thicknessBarrel: thicknessForward;
+  uint gIndex = threadIdx.x + blockIdx.x*blockDim.x;
+  if(gIndex<numberOfClusters) {
 
-  // Jobs in kernel are 
-  // Compute lorentzAngle (independent method) -------by 1st thread
-  if(tid==0) {
+    uint64 clusterId = ClusterId[gIndex];
+    if(clusterId==0) {
+      xhit[gIndex] = 0;
+      yhit[gIndex] = 0;
+      return ;
+    }
+  
+    startIndex = Index[gIndex];
+
+    size     = Index[gIndex+1] - startIndex;
+    moduleId = getModule(clusterId); // to get the moduleId devide by 10^6
+    theThickness = (moduleId<1184) ? thicknessBarrel: thicknessForward;
+    // Jobs in kernel are 
+    // Compute lorentzAngle 
+
+    //for(int i=startIndex; i<startIndex+size; i++) {
+      //printf("clusterId: %d  xx: %d   yy:  %d\n",clusterId, xx[i], yy[i] );
+    //}
     cotAngle = computeLorentzAngle(detDB,moduleId,startIndex,size, xx, yy,adc); 
     lorentShiftX = detDB->LorentzShiftX[moduleId];  // read from the database
     lorentShiftY = detDB->LorentzShiftY[moduleId];
@@ -92,33 +95,28 @@ __global__ void CPE_kernel(const CPE_cut_Param cpe_cut, const DetDB *detDB,
   
     lorentShiftY = lorentShiftY * widthLAFractionY;
     lorentShiftX = (moduleId<1184) ? lorentShiftX*widthLAFractionX_Barrel: lorentShiftX*widthLAFractionX_Forward;
-  }
 
-  // Find xmin, ymin, xmax, ymax (independent method) -------- by 2nd thread
-  if(tid==1) {  
+    // Find xmin, ymin, xmax, ymax 
+   
     min_max(startIndex, size, xx, xmin, xmax);
     min_max(startIndex, size, yy, ymin, ymax);
     sizeX = xmax - xmin + 1.0f;
     sizeY = ymax - ymin + 1.0f;
     //printf("xmin: %f, xmax: %f,  ymin: %f, ymax: %f\n",xmin, xmax, ymin, ymax); 
-  }
-  __syncthreads();
 
-  // Find Q_f and Q_l which depend upon output of step 2.----- by 1st thread
-  if(tid==0) {
+    // Find Q_f and Q_l which depend upon output of step 2
+
     collectCharge (xx, yy, adc, startIndex, size, xmin, xmax,
                  ymin, ymax, Q_l_X, Q_f_X, Q_l_Y, Q_f_Y );
-  }
+    //printf("Q_l_X: %f, Q_f_X: %f, Q_l_Y: %f, Q_f_Y: %f",Q_l_X, Q_f_X, Q_l_Y, Q_f_Y);
 
-  // Convert to localPosition in cm depends upon output of steps 2.-----by 2ns thread
-  if(tid==1) {
+    // Convert to localPosition in cm depends upon output of steps 2
+
     lp_min = localPositionInCm( xmin +1.0, ymin+1.0); // use the formula to convert
-    lp_max = localPositionInCm( xmax, ymax);          // first pix and last pix
-  }
-  __syncthreads();
+    lp_max = localPositionInCm( xmax, ymax); // first pix and last pix
 
-  // Compute x_hit using the formula depends upon output of step 1 to 4 ----- by 1st thread
-  if(tid==0) {
+    // Compute x_hit using the formula depends upon output of step 1 to 4 ----- by 1st thread
+ 
     float x_hit=genericPixelHit(sizeX, lp_min.x(), lp_max.x(),
                   Q_f_X, Q_l_X,
                   cotAngle.cotAlpha,
@@ -132,10 +130,9 @@ __global__ void CPE_kernel(const CPE_cut_Param cpe_cut, const DetDB *detDB,
                   cpe_cut.size_cutX
                   );
     x_hit = x_hit + shiftX;
-    xhit[blockId] = x_hit;
-  }
-  // Compute y_hit using the formula depends upon output of step 1 to 4----- by 2nd thread
-  if(tid==1) {
+    xhit[gIndex] = x_hit;
+
+  // Compute y_hit using the formula depends upon output of step 1 to 4
     float y_hit=genericPixelHit(sizeY, lp_min.y(), lp_max.y(),
                   Q_f_Y, Q_l_Y,
                   cotAngle.cotBeta,
@@ -149,7 +146,7 @@ __global__ void CPE_kernel(const CPE_cut_Param cpe_cut, const DetDB *detDB,
                   cpe_cut.size_cutY
                   );
     y_hit = y_hit + shiftY;
-    yhit[blockId] = y_hit;
+    yhit[gIndex] = y_hit;
   }
 }
 // end of CPE_kernel
@@ -216,10 +213,10 @@ void CPE_wrapper(const uint total_cluster, const uint64 *ClusterId, const uint *
                  const uint *adc ) 
 {  
   CPE_cut_Param cpe_cut;
-  int no_blocks = total_cluster;
-  int no_threads = 2;
+  uint no_threads = 512;
+  uint no_blocks = total_cluster/no_threads +1;
   // xhit_d, yhit_d, contains output
-  CPE_kernel<<<no_blocks, no_threads>>>(cpe_cut,detDB,ClusterId, Index, xx, yy, adc, xhit_d, yhit_d); 
+  CPE_kernel<<<no_blocks, no_threads>>>(cpe_cut,detDB,ClusterId, Index, xx, yy, adc,total_cluster, xhit_d, yhit_d);
   cudaDeviceSynchronize();
   checkCUDAError("Error in CPE_kernel");
   cout<<"CPE execution finished!\n";
