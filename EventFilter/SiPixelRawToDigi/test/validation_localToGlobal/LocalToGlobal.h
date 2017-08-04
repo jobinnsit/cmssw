@@ -1,29 +1,30 @@
 #ifndef LOCALTOGLOBAL_H
 #define LOCALTOGLOBAL_H
 
-// this structure may change little bit in future
-// the output formate is not finlized
-// we may discard some of the members if not needed 
 struct RecHit {
   long long unsigned HitId;// will store info about eventno, moduleno, layer etc.
-  float lx;
-  float ly;
-  uint layer;
   float x;
   float y;
   float z;
   float u;  // barrel: u=r, v=z, forward the opposite...
   float v;
   float phi;
-  float theta =0;
+};
+
+struct LocalHit {
+	long long unsigned  HitId;
+	int module; //Actually it's a clusterId, conatins info about event, module
+	float x;
+	float y;
+	float z=0;
 };
 
 // since we don't know the definition of Rotatation matrix[3,3].
 // we have hardcoded the elements of rotation matrix for each module
 // which are sorted in ascending order.
 struct Rotation {
-  float R11;
-  float R12;
+	float R11;
+	float R12;
 	float R13;
 	float R21;
 	float R22;
@@ -44,8 +45,8 @@ struct GlobalPosition {
 	float phi;
 	Rotation Rot;                                                                  
 };
-GlobalPosition *globalPosRot; // pointer to store the array of rotatidon matrix for each module
-RecHit *Hit; // pointer to store the array of global hits
+GlobalPosition *gPosrot;
 
+const int NMODULE = 1856;
 void uploadGlobal_Positon_Rotation_Matrix(GlobalPosition *globalPosRot);
 #endif // CPEGPU_H

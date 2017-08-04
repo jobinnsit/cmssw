@@ -255,10 +255,10 @@ __device__ RecHit toGlobal(const GlobalPosition *gp, const int module,
 }
 
 __global__ void localToGlobal_kernel(const int N, const GlobalPosition *globalPosRot,
-  const float *lxhit, const float *lyhit, uint64 *hitId, RecHit *Hit) {
+  const float *lxhit, const float *lyhit, const uint64 *hitId, RecHit *Hit) {
   int gIndex = threadIdx.x + blockIdx.x*blockDim.x;
   if(gIndex<N) {
-    int module = getModuleId(hitId[gIndex]); // correct the first entry clusterId =0 bad hit
+    int module = getModule(hitId[gIndex]); // correct the first entry clusterId =0 bad hit
     RecHit hit = toGlobal(globalPosRot, module, lxhit[gIndex], lyhit[gIndex]);
     Hit[gIndex].HitId = hitId[gIndex];
     Hit[gIndex].x = hit.x;
@@ -271,21 +271,22 @@ __global__ void localToGlobal_kernel(const int N, const GlobalPosition *globalPo
 }
 
 
-void storeOutput(const int N, float *lxhit, float *lyhit, const RecHit *Hit_d) {
+void storeOutput(const int N, const float *lxhit, const float *lyhit, const RecHit *Hit_d) {
+  cout<<" store localToGlobal output for validation"<<endl;
   float *lxhit_h, *lyhit_h;
   lxhit_h = (float*)malloc(N*sizeof(float));
   lyhit_h = (float*)malloc(N*sizeof(float));
   RecHit *Hit_h = (RecHit*)malloc(N*sizeof(RecHit));
   cudaMemcpy(Hit_h, Hit_d, N*sizeof(RecHit), cudaMemcpyDeviceToHost);
-  cudaMemcpy(lxhit_h, lxhit, N*sizeof*(float), cudaMemcpyDeviceToHost);
-  cudaMemcpy(lyhit_h, lyhit, N*sizeof*(float), cudaMemcpyDeviceToHost);
-
+  cudaMemcpy(lxhit_h, lxhit, N*sizeof(float), cudaMemcpyDeviceToHost);
+  cudaMemcpy(lyhit_h, lyhit, N*sizeof(float), cudaMemcpyDeviceToHost);
+  checkCUDAError("error in memcpy");
   ofstream ofile("GlobalHit_GPU_CMSSW.txt");
   ofile<<"   HitId\t\t localx\t  localy\t  globalx\t   globaly \t  globalz"<<endl;
   ofile<<std::fixed;
   ofile<<setprecision(6);
   for(int i=0;i<N;i++) {
-    ofile<<setw(14)<<Hit_h[i].HitId<<setw(14)<<lxhit[i]<<setw(14)<<lyhit[i]<<setw(14);
+    ofile<<setw(14)<<Hit_h[i].HitId<<setw(14)<<lxhit_h[i]<<setw(14)<<lyhit_h[i]<<setw(14);
     ofile<<Hit_h[i].x<<setw(14)<<Hit_h[i].y<<setw(14)<<Hit_h[i].z<<endl;
   }
   ofile.close();
@@ -302,9 +303,11 @@ void localToGlobal(const int N, const GlobalPosition *globalPosRot,
   const uint64 *hitId,const float *lxhit, const float *lyhit,  RecHit *Hit) {
   int threads = 512;
   int blocks  = N/threads +1; 
-  localToGlobal_kernel<<<blocks, threads>>>(N, globalPosRot, xhit_d, yhit_d, hitId_d, Hit);
+  cout<<"launching localToGlobal kernel"<<endl;
+  localToGlobal_kernel<<<blocks, threads>>>(N, globalPosRot, lxhit, lyhit, hitId, Hit);
+  checkCUDAError("localToGlobal_kernel failed");
   // only for validation
-  storeOutput(N, xhit_h, yhit_h, Hit);
+  storeOutput(N, lxhit, lyhit, Hit);
   
 }
 
@@ -324,7 +327,7 @@ void CPE_wrapper(const uint total_cluster, const uint64 *ClusterId, const uint *
   cout<<"CPE kernel execution finished!\n";
 
   localToGlobal(total_cluster, globalPosRot, ClusterId, xhit_d, yhit_d, Hit);
-
+  cout<<"after local to global conversion"<<endl;
   // for validation purpose only
   float *xhit, *yhit;
   uint64 *ClusterId_h;
@@ -505,7 +508,7 @@ void initDeviceMemCPE() {
   uploadCPE_db(detDB);
   
 // allocate memory to hold the global hits and other parameter 
-  const int size = MAXCLUSTER*NEVENT*sizeof(RecHit);
+  const int size = MAX_CLUSTER*NEVENT*sizeof(RecHit);
   cudaMalloc((void**)&Hit, size);
   cudaMalloc((void**)&globalPosRot, NMODULE*sizeof(GlobalPosition));
   // upload global position and rotation matrix for each module
