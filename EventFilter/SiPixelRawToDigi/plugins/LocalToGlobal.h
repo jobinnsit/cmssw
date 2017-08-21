@@ -4,23 +4,28 @@
 // this structure may change little bit in future
 // the output formate is not finlized
 // we may discard some of the members if not needed 
+// output structure
 struct RecHit {
-  long long unsigned HitId;// will store info about eventno, moduleno, layer etc.
+  bool  barrel =0; //true if barrel
+  int   layer=0;
+  int   disk=0;
+  //HitID stores info about eventno and moduleno
+  long long unsigned HitId;
   float lx;
   float ly;
-  uint layer;
   float x;
   float y;
   float z;
-  float u;  // barrel: u=r, v=z, forward the opposite...
+  float u;  //barrel: u=r, v=z, forward the opposite...
   float v;
   float phi;
-  float theta =0;
+  float theta;
 };
 
-// since we don't know the definition of Rotatation matrix[3,3].
-// we have hardcoded the elements of rotation matrix for each module
-// which are sorted in ascending order.
+//In barrel layers, each phi strip  has the same rotation matrix 
+//which is hardocded 
+//Each module in the forward pixel detector has its own rotation matrix
+//which is hardcoded 
 struct Rotation {
   float R11;
   float R12;
@@ -33,8 +38,9 @@ struct Rotation {
 	float R33;
 };
 
-// store the position of each module in global frame.
-// store these constants in device memory for local to global converson 
+//Store the position of each module in the global frame.
+//Store these constants in device memory needed for 
+//local to global converson 
 struct GlobalPosition {
 	unsigned int RawId; //unsigned 32 bit DetId or RawId
 	float xpos;
