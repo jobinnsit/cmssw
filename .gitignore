@@ -1,4 +1,6 @@
 __init__.py
+*.out
+*.log
 *.txt
 *.root
 *.pyc
