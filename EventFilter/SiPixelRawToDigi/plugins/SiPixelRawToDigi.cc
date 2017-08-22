@@ -329,10 +329,12 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
   // GPU specific: RawToDigi -> clustering -> CPE
   eventCount++;
   eventIndex[eventCount] = wordCounterGPU;
-  cout<<"Data read for event: "<<eventCount<<endl;
+  static int ec=1;
+  cout<<"Data read for event: "<<ec++<<endl;
   if(eventCount==NEVENT) {
     RawToDigi_Cluster_CPE_wrapper(wordCounterGPU, word, fedCounter,fedIndex, eventIndex);
     wordCounterGPU =  0;
+    eventCount=0;
   }
   fedCounter =0;
 } // end of produce function
