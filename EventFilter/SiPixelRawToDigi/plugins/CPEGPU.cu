@@ -22,6 +22,7 @@ limitations under the License.
 #include <string>
 #include <iomanip>
 #include <vector>
+#include <math.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
 
@@ -32,6 +33,9 @@ limitations under the License.
 #include "CPEGPU.h"
 // to intitalize memory
 #include "CPEGPUMem.h"
+//for local to global coordinate conversion
+#include "LocalToGlobal.h"
+#include "DetParamBits.h"
 using namespace std;
 
 __host__ __device__ uint getModule(uint64 clusterId) {
@@ -226,6 +230,108 @@ __device__ float genericPixelHit(uint size, float first_pix, float last_pix,
 }
 
 
+// convert local hits to global hits:q
+
+__device__ RecHit toGlobal(const GlobalPosition *gp, const int module,
+  const float x, const float y) {
+  float xpos = gp[module].xpos;
+  float ypos = gp[module].ypos;
+  float zpos = gp[module].zpos;
+  float r    = gp[module].r;
+  Rotation rot = gp[module].Rot;
+  float R11  = rot.R11;
+  float R12  = rot.R12;
+  float R13  = rot.R13;
+  float R21  = rot.R21;
+  float R22  = rot.R22; 
+  float R23  = rot.R23;
+  float R31  = rot.R31;
+  float R32  = rot.R32;
+  float R33  = rot.R33;
+  float z =0; // as there is no local z 2D module
+  // local to global: Rota[]*local[] + pos[]
+  float global_x = (R11*x + R21*y + R31*z) + xpos;
+  float global_y = (R12*x + R22*y + R32*z) + ypos;
+  float global_z = (R13*x + R23*y + R33*z) + zpos;
+  
+  RecHit hit;
+  hit.x = global_x;
+  hit.y = global_y;
+  hit.z = global_z;
+  // barrel: u=r, v=z, forward the opposite...
+  if(module<1184) {
+    hit.u = r;
+    hit.v = global_z;
+    hit.barrel = 1;
+  }
+  else {
+    hit.u = global_z;
+    hit.v = r;
+  }
+
+  hit.phi  = atanf(hit.y/hit.x);
+  hit.theta = atanf(sqrt(powf(hit.x,2)+powf(hit.y, 2))/hit.z);
+  // if theta is negative add pi in it
+  if(hit.theta<0) hit.theta  = 3.14159 + hit.theta;
+  // sign of phi determined as follows found after debugging cmssw
+  if(hit.x<0) {
+    if(hit.y<0) hit.phi=hit.phi-3.14159;
+    else hit.phi = hit.phi + 3.14159; 
+  }
+
+  return hit;
+}
+
+__global__ void localToGlobal_kernel(const int N, const GlobalPosition *globalPosRot,
+  const float *lxhit, const float *lyhit, const uint64 *hitId, RecHit *Hit) {
+  int gIndex = threadIdx.x + blockIdx.x*blockDim.x;
+  if(gIndex<N) {
+    int module = getModule(hitId[gIndex]); // correct the first entry clusterId =0 bad hit
+    RecHit hit = toGlobal(globalPosRot, module, lxhit[gIndex], lyhit[gIndex]);
+    Hit[gIndex].HitId = hitId[gIndex];
+    Hit[gIndex].x = hit.x;
+    Hit[gIndex].y = hit.y;
+    Hit[gIndex].z = hit.z;
+    Hit[gIndex].u = hit.u;
+    Hit[gIndex].v = hit.v;
+    Hit[gIndex].barrel = hit.barrel;
+    Hit[gIndex].phi   = hit.phi;
+    Hit[gIndex].theta = hit.theta;
+    if(module<1184) {
+      Hit[gIndex].layer = getLayer(globalPosRot[module].RawId);
+      Hit[gIndex].disk = 0;
+    }
+    else {
+      int disk = getDisk(globalPosRot[module].RawId);
+      if (hit.z<0) disk = -disk;
+      Hit[gIndex].disk = disk;
+      Hit[gIndex].layer= 0;
+    }
+  }
+}
+
+void localToGlobal(const int N, const GlobalPosition *globalPosRot,
+  const uint64 *hitId,const float *lxhit, const float *lyhit,  RecHit *Hit) {
+  int threads = 512;
+  int blocks  = N/threads +1; 
+  cout<<"launching localToGlobal kernel"<<endl;
+  cudaEvent_t start, stop;
+  cudaEventCreate(&start);
+  cudaEventCreate(&stop);
+  cudaEventRecord(start);
+  localToGlobal_kernel<<<blocks, threads>>>(N, globalPosRot, lxhit, lyhit, hitId, Hit);
+  cudaDeviceSynchronize();
+  cudaEventRecord(stop);
+  cudaEventSynchronize(stop);
+  float milliseconds = 0;
+  cudaEventElapsedTime(&milliseconds, start, stop);
+  cout<<"Time for localToGlobal coordinate conversion\n Total Hits: "<<N<<" Time(us): "<<milliseconds*1000<<endl;
+
+  checkCUDAError("localToGlobal_kernel failed");
+  
+}
+
+
 void CPE_wrapper(const uint total_cluster, const uint64 *ClusterId, const uint *Index, const uint *xx, const uint *yy,
                  const uint *adc ) 
 {
@@ -251,6 +357,9 @@ void CPE_wrapper(const uint total_cluster, const uint64 *ClusterId, const uint *
   cout<<"GPU Time(ms) for CPE:  "<<time_ms<<endl;
   checkCUDAError("Error in CPE_kernel");
   cout<<"CPE kernel execution finished!\n";
+
+  localToGlobal(total_cluster, globalPosRot, ClusterId, xhit_d, yhit_d, Hit);
+  cout<<"after local to global conversion"<<endl;
 
   // for validation purpose only
 /*  float *xhit, *yhit;
@@ -390,7 +499,7 @@ __device__ LocalPoint localPositionInCm(float x, float y) {
   //auto const j = std::lower_bound(std::begin(bigYIndeces),std::end(bigYIndeces),binoffy);
   //if (*j==binoffy) { local_pitchy  *= 2 ;}
   //binoffy += (j-bigYIndeces);
-  if(binoffy>416) binoffy=433; //this is due to the bug in cmssw cpe, since origin is shifted by 1 remove this in cmssw
+  if(binoffy>416) binoffy=433; 
   else if(!(binoffy%52)) {
     binoffy += ((int)(binoffy/52))*2;
     local_pitchy  *= 2 ;
@@ -430,6 +539,12 @@ void initDeviceMemCPE() {
   cudaMalloc((void**)&yhit_d, MAX_CLUSTER*sizeof(float));
   cudaMallocManaged((void**)&detDB, sizeof(DetDB));
   uploadCPE_db(detDB);
+  // allocate memory to hold the global hits and other parameter 
+  const int size = MAX_CLUSTER*NEVENT*sizeof(RecHit);
+  cudaMalloc((void**)&Hit, size);
+  cudaMalloc((void**)&globalPosRot, NMODULE*sizeof(GlobalPosition));
+  // upload global position and rotation matrix for each module
+  uploadGlobal_Positon_Rotation_Matrix(globalPosRot);
 }
 void freeDeviceMemCPE() {
   cudaFree(xhit_d);
@@ -457,4 +572,26 @@ void uploadCPE_db(DetDB *detDB) {
   }
   ifile.close();
   cout<<"CPE database uploaded successfully ! "<<endl;
+}
+
+// upload the global position and rotation matrix for 
+// local to global coordinate coversion
+void uploadGlobal_Positon_Rotation_Matrix(GlobalPosition *globalPosRot) {
+  GlobalPosition *gp;
+  gp = (GlobalPosition*)malloc(NMODULE*sizeof(GlobalPosition));
+  // read the file and upload
+  ifstream ifile("Global_Position_Rotation_forL2G.dat");
+  if(!ifile) {
+    cout<<"File not found: Global_Position_Rotation_forL2G.dat"<<endl;
+  }
+  string line;
+  getline(ifile, line);
+  for(int i=0;i<NMODULE;i++) {
+    ifile>>gp[i].RawId>>gp[i].xpos>>gp[i].ypos>>gp[i].zpos>>gp[i].r>>gp[i].phi;
+    ifile>>gp[i].Rot.R11>>gp[i].Rot.R12>>gp[i].Rot.R13;
+    ifile>>gp[i].Rot.R21>>gp[i].Rot.R22>>gp[i].Rot.R23;
+    ifile>>gp[i].Rot.R31>>gp[i].Rot.R32>>gp[i].Rot.R33;
+  }
+  cudaMemcpy(globalPosRot, gp, NMODULE*sizeof(GlobalPosition), cudaMemcpyHostToDevice);
+  free(gp);
 }

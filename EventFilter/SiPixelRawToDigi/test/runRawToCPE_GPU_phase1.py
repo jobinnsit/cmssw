@@ -85,20 +85,20 @@ process.siPixelDigis.Timing = False
 process.siPixelDigis.UsePhase1 = cms.bool(True)
 
 process.MessageLogger = cms.Service("MessageLogger",
-    debugModules = cms.untracked.vstring('siPixelDigis'),
+    #debugModules = cms.untracked.vstring('siPixelDigis'),
     destinations = cms.untracked.vstring('log'),
     log = cms.untracked.PSet( threshold = cms.untracked.string('WARNING'))
     #log = cms.untracked.PSet( threshold = cms.untracked.string('DEBUG'))
 )
 
-process.out = cms.OutputModule("PoolOutputModule",
-     fileName =  cms.untracked.string('file:digis_phase1.root'),
+#process.out = cms.OutputModule("PoolOutputModule",
+#     fileName =  cms.untracked.string('file:digis_phase1.root'),
 #    fileName =  cms.untracked.string('file:/afs/cern.ch/work/d/dkotlins/public/data/digis/digi_zb_248025.root'),
     #fileName =  cms.untracked.string('file:/afs/cern.ch/work/d/dkotlins/public/MC/mu_phase1/pt100_81/digis/digis1_formatfix.root'),
     #outputCommands = cms.untracked.vstring("drop *","keep *_siPixelDigis_*_*")
-)
+#)
 
 
 process.p = cms.Path(process.siPixelDigis)
 #process.p = cms.Path(process.siPixelDigis*process.a)
-process.ep = cms.EndPath(process.out)
+#process.ep = cms.EndPath(process.out)
