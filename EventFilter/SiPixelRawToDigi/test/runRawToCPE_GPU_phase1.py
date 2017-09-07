@@ -30,7 +30,7 @@ from Configuration.AlCa.GlobalTag import GlobalTag
 #process.GlobalTag.globaltag ="81X_dataRun2_relval_v14"
 process.GlobalTag = GlobalTag(process.GlobalTag, 'auto:phase1_2017_realistic', '')
 
-process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(384))
+process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(8))
 
 process.source = cms.Source("PoolSource",
 fileNames =  cms.untracked.vstring(
