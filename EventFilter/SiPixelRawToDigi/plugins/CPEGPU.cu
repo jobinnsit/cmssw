@@ -306,43 +306,29 @@ void storeOutput(const int N, const float *lxhit, const float *lyhit, const RecH
   cudaMemcpy(lxhit_h, lxhit, N*sizeof(float), cudaMemcpyDeviceToHost);
   cudaMemcpy(lyhit_h, lyhit, N*sizeof(float), cudaMemcpyDeviceToHost);
   checkCUDAError("error in memcpy");
-  // ofstream ofile("GlobalHit_GPU_CMSSW.txt");
-  // ofile<<"   HitId\t\t localx\t  localy\t  globalx\t   globaly \t  globalz"<<endl;
-  ofstream ofile("GPU_CMSSW_localhit_globalhit_phi_theta_for_integration.txt");
-  ofstream ofile1("GPU_CMSSW_LocalToGlobal_Output_for_integartion.txt");
-  ofile<<"Event   mod   RawId  local_x      local_y     global_x    global_y    global_z    phi    theta "<<endl;
-  ofile<<std::fixed;
-  ofile<<setprecision(6);
-  ofile1<<"Event   mod   RawId     barrel    layer/disk   lx      ly     global_x    global_y    global_z    phi    theta "<<endl;
+
+  ofstream ofile1("GPU_CMSSW_CPE_Hits_Glbobal.txt");
+
+  ofile1<<"Event     layer   global_x    global_y     global_z      R         phi         theta "<<endl;
   ofile1<<std::fixed;
   ofile1<<setprecision(6);
 
   for(int i=0;i<N;i++) {
     int module = getModule(Hit_h[i].HitId);
     if(Hit_h[i].barrel) {
-      ofile1<<setw(4)<<getEvent(Hit_h[i].HitId)<<setw(6)<<module<<setw(11)<<gp[module].RawId;
-      ofile1<<setw(6)<<Hit_h[i].barrel<<setw(10)<<Hit_h[i].layer<<setw(13)<<lxhit_h[i]
-      <<setw(13)<<lyhit_h[i]<<setw(13)<<Hit_h[i].x<<setw(13)<<Hit_h[i].y<<setw(13)
-      <<Hit_h[i].z<<setw(13)<<Hit_h[i].phi<<setw(13)<<Hit_h[i].theta<<endl;
+      ofile1<<setw(4)<<getEvent(Hit_h[i].HitId)<<setw(10)<<Hit_h[i].layer<<setw(13)
+      <<Hit_h[i].x<<setw(13)<<Hit_h[i].y<<setw(13)<<Hit_h[i].z<<setw(13)
+      <<sqrt(pow(Hit_h[i].x, 2)+pow(Hit_h[i].y, 2))<<setw(13)<<Hit_h[i].phi<<setw(13)<<Hit_h[i].theta<<endl;
     }
-    else {
-      ofile1<<setw(4)<<getEvent(Hit_h[i].HitId)<<setw(6)<<module<<setw(11)<<gp[module].RawId;
-      ofile1<<setw(6)<<Hit_h[i].barrel<<setw(10)<<Hit_h[i].disk<<setw(13)<<lxhit_h[i]
-      <<setw(13)<<lyhit_h[i]<<setw(13)<<Hit_h[i].x<<setw(13)<<Hit_h[i].y<<setw(13)
-      <<Hit_h[i].z<<setw(13)<<Hit_h[i].phi<<setw(13)<<Hit_h[i].theta<<endl;
-    }
-    // for debugging
-         
-    ofile<<setw(4)<<getEvent(Hit_h[i].HitId)<<setw(6)<<module<<setw(11)<<gp[module].RawId;
-    ofile<<setw(13)<<lxhit_h[i]<<setw(13)<<lyhit_h[i]<<setw(13)<<Hit_h[i].x<<setw(13)
-    <<Hit_h[i].y<<setw(13)<<Hit_h[i].z<<setw(13)<<Hit_h[i].phi
-    <<setw(13)<<Hit_h[i].theta<<endl;
-     
-    // ofile<<setw(12)<<Hit_h[i].HitId<<setw(6)<<module<<setw(6);
-    // ofile<<Hit_h[i].disk<<setw(13)<<Hit_h[i].x<<setw(13)<<Hit_h[i].y<<setw(13)<<Hit_h[i].z<<setw(13)<<gp[module].phi
-    // <<setw(13)<<Hit_h[i].phi1<<endl;
+    // else {
+    //   ofile1<<setw(4)<<getEvent(Hit_h[i].HitId)<<setw(6)<<module<<setw(11)<<gp[module].RawId;
+    //   ofile1<<setw(6)<<Hit_h[i].barrel<<setw(10)<<Hit_h[i].disk<<setw(13)<<lxhit_h[i]
+    //   <<setw(13)<<lyhit_h[i]<<setw(13)<<Hit_h[i].x<<setw(13)<<Hit_h[i].y<<setw(13)
+    //   <<Hit_h[i].z<<setw(13)<<Hit_h[i].phi<<setw(13)<<Hit_h[i].theta<<endl;
+    // }
+
   }
-  ofile.close();
+
   ofile1.close();
   free(Hit_h);
   free(lxhit_h);
@@ -372,7 +358,7 @@ void localToGlobal(const int N, const GlobalPosition *globalPosRot,
 */
   checkCUDAError("localToGlobal_kernel failed");
   // only for debugging and validation
-  //storeOutput(N, lxhit, lyhit, Hit);
+//  storeOutput(N, lxhit, lyhit, Hit);
   
 }
 
