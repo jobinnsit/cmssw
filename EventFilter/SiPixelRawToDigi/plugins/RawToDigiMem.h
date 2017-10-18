@@ -37,7 +37,7 @@ struct ADCThreshold {
   // not present in _cfg.py
   const int theStackADC_  = 255; // the maximum adc count for stack layer
   const int theFirstStack_ = 5; // the index of the fits stack layer
-  const double theElectronPerADCGain_ = 135; //ADC to electron conversion
+  const double theElectronPerADCGain_ = 600; //ADC to electron conversion
 
 };
 #endif

@@ -334,6 +334,46 @@ void storeOutput(const int N, const float *lxhit, const float *lyhit, const RecH
   free(lxhit_h);
   free(lyhit_h);
 }
+
+// for validation only(optional), store the cluster and cpe output
+void storeClusterCPE(const uint total_cluster, const uint *Index,
+                     const uint64 *ClusterId,const float *xhit_d, const float *yhit_d) {
+  float *xhit, *yhit;
+  uint64 *ClusterId_h;
+  uint *Index_h;
+  ClusterId_h = (uint64*)malloc(total_cluster*sizeof(uint64));
+  Index_h = (uint*)malloc(total_cluster*sizeof(uint));
+  xhit = (float*)malloc(total_cluster*sizeof(float));
+  yhit = (float*)malloc(total_cluster*sizeof(float));
+  cout<<"total_cluster: "<<total_cluster<<endl;
+  cudaMemcpy(xhit, xhit_d, total_cluster*sizeof(float), cudaMemcpyDeviceToHost);
+  cudaMemcpy(yhit, yhit_d, total_cluster*sizeof(float), cudaMemcpyDeviceToHost);
+  cudaMemcpy(ClusterId_h, ClusterId, total_cluster*sizeof(uint64), cudaMemcpyDeviceToHost);
+  cudaMemcpy(Index_h, Index, total_cluster*sizeof(uint), cudaMemcpyDeviceToHost);
+
+  ofstream ofile;
+  uint pre_event =0;
+  uint cur_event =0;
+  uint module ;
+  string outputFile = "CMSSW_GPU_RawId_ClustSize_xPos_yPos_Event_"+to_string(cur_event)+".txt";
+  ofile.open(outputFile);
+  for (int i = 1; i <total_cluster; i++) {
+    cur_event = getEvent(ClusterId_h[i]);
+    if(pre_event != cur_event) {
+      ofile.close();
+      outputFile = "CMSSW_GPU_RawId_ClustSize_xPos_yPos_Event_"+to_string(cur_event)+".txt";
+      ofile.open(outputFile);
+      pre_event = cur_event;
+    }
+    module = getModule(ClusterId_h[i]);
+    ofile<< setw(6) << module << setw(8) << Index_h[i+1] - Index_h[i] << setw(20) << xhit[i] << setw(20)<< yhit[i]<<endl;     
+  }
+  free(xhit);
+  free(yhit);
+  free(ClusterId_h);
+  ofile.close();
+}
+
 //localToGlobal()
 //Desc: convert local coordinate of a hit into global hit
 //input: Total hits, RotationMatrix, clusterId,local xhit, yhit
@@ -362,7 +402,8 @@ void localToGlobal(const int N, const GlobalPosition *globalPosRot,
   
 }
 
-void CPE_wrapper(const uint total_cluster, const uint64 *ClusterId, const uint *Index, const uint *xx, const uint *yy,
+void CPE_wrapper(const uint total_cluster, const uint64 *ClusterId, 
+                 const uint *Index, const uint *xx, const uint *yy,
                  const uint *adc ) 
 {  
   CPE_cut_Param cpe_cut;
@@ -376,6 +417,10 @@ void CPE_wrapper(const uint total_cluster, const uint64 *ClusterId, const uint *
   //convert local hit in global frame
   localToGlobal(total_cluster, globalPosRot, ClusterId, xhit_d, yhit_d, Hit);
   cout<<"All the hits converted into global frame successfully!"<<endl;
+
+  // for validating gpu cluster, cpe with cmssw cpu cluster, cpe
+  // store the output uncomment the below line for validation
+  // storeClusterCPE(total_cluster, Index,ClusterId, xhit_d, yhit_d);
 }
 
 // compute cot alpha and beta for each cluster

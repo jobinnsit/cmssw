@@ -30,7 +30,7 @@ from Configuration.AlCa.GlobalTag import GlobalTag
 #process.GlobalTag.globaltag ="81X_dataRun2_relval_v14"
 process.GlobalTag = GlobalTag(process.GlobalTag, 'auto:phase1_2017_realistic', '')
 
-process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(8))
+process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(128))
 
 process.source = cms.Source("PoolSource",
 fileNames =  cms.untracked.vstring(
@@ -41,8 +41,8 @@ fileNames =  cms.untracked.vstring(
 #2017 CMSSW_9_2_0
 # download this file
 # /store/relval/CMSSW_9_2_0/RelValTTbar_13/GEN-SIM-DIGI-RAW/PU25ns_91X_upgrade2017_realistic_v5_PU50-v1/10000/7C654D7C-9E40-E711-8690-0025905A48BC.root
-#'file:/afs/cern.ch/work/s/sdubey/data/Raw_Data_Phase1/7C654D7C-9E40-E711-8690-0025905A48BC.root'
-'file:/home/fpantale/data/920/PU50/085D5AAF-9E40-E711-B12A-0025905A609E.root'
+'file:/afs/cern.ch/work/s/sdubey/data/Raw_Data_Phase1/7C654D7C-9E40-E711-8690-0025905A48BC.root'
+#'file:/home/fpantale/data/920/PU50/085D5AAF-9E40-E711-B12A-0025905A609E.root'
 #2016 CMSSW_8_1_0
 #'file:/afs/cern.ch/work/s/sdubey/data/Raw_Data_Phase1/0216ABF7-19B1-E611-8786-0025905A60F8.root'
 #'file:/afs/cern.ch/work/s/sdubey/data/9279A7C3-59ED-E511-95C8-0025905A60F8.root'
