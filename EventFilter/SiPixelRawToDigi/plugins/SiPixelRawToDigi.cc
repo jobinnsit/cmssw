@@ -6,7 +6,8 @@
 // Jan 2016 Tamas Almos Vami (Tav) (Wigner RCP) -- Cabling Map label option
 // Jul 2017 Viktor Veszpremi -- added PixelFEDChannel
 
-#include "SiPixelRawToDigi.h"
+// This code is an entry point for GPU based pixel track reconstruction for HLT
+// Modified by Sushil and Shashi for this purpose July-2017
 
 #include "DataFormats/Common/interface/Handle.h"
 #include "FWCore/Framework/interface/ESHandle.h"
@@ -36,8 +37,26 @@
 #include "EventFilter/SiPixelRawToDigi/interface/PixelUnpackingRegions.h"
 #include "FWCore/Framework/interface/ConsumesCollector.h"
 
+#include "FWCore/PluginManager/interface/ModuleDef.h"
+#include "FWCore/Framework/interface/MakerMacros.h"
+
 #include "TH1D.h"
 #include "TFile.h"
+#include "SiPixelRawToDigi.h"
+#include <string>
+#include <chrono>
+#include <iostream>
+#include <fstream>
+
+#include <cuda.h>             // for GPU
+#include <cuda_runtime.h>     // for pinned memory
+#include "EventInfoGPU.h"     // Event Info
+// device memory intialization for RawTodigi
+#include "RawToDigiMem.h"
+// // device memory initialization for CPE
+// #include "CPEGPUMem.h"
+// //device memory initialization for clustering
+// #include "PixelClusterMem.h"
 
 using namespace std;
 
@@ -103,7 +122,29 @@ SiPixelRawToDigi::SiPixelRawToDigi( const edm::ParameterSet& conf )
   }
   //CablingMap could have a label //Tav
   cablingMapLabel = config_.getParameter<std::string> ("CablingMapLabel");
+  
+  //GPU specific
+  const int MAX_FED  = 150;
+  const int MAX_WORD = 2000;
+  int WSIZE    = MAX_FED*MAX_WORD*NEVENT*sizeof(unsigned int);
+  int FSIZE    = 2*MAX_FED*NEVENT*sizeof(unsigned int)+sizeof(unsigned int); 
 
+  //word = (unsigned int*)malloc(WSIZE);
+  cudaMallocHost((void**)&word, WSIZE);
+  //fedIndex =(unsigned int*)malloc(FSIZE);
+  cudaMallocHost((void**)&fedIndex, FSIZE);
+  eventIndex = (unsigned int*)malloc((NEVENT+1)*sizeof(unsigned int));
+  eventIndex[0] =0;
+
+  // allocate memory for RawToDigi on GPU
+  initDeviceMemory();
+
+  // // allocate auxilary memory for clustering
+  // initDeviceMemCluster();
+
+  // // allocate memory for CPE on GPU
+  // initDeviceMemCPE();
+  
 }
 
 
@@ -118,7 +159,17 @@ SiPixelRawToDigi::~SiPixelRawToDigi() {
     hCPU->Write();
     hDigi->Write();
   }
-
+  // free(word);
+  cudaFreeHost(word);
+  // free(fedIndex);
+  cudaFreeHost(fedIndex);
+  free(eventIndex);
+  // free device memory used for RawToDigi on GPU
+  freeMemory(); 
+  // // free auxilary memory used for clustering
+  // freeDeviceMemCluster();
+  // // free device memory used for CPE on GPU
+  // freeDeviceMemCPE();
 }
 
 void
@@ -162,19 +213,20 @@ SiPixelRawToDigi::fillDescriptions(edm::ConfigurationDescriptions& descriptions)
 void SiPixelRawToDigi::produce( edm::Event& ev,
                               const edm::EventSetup& es) 
 {
-  const uint32_t dummydetid = 0xffffffff;
-  debug = edm::MessageDrop::instance()->debugEnabled;
+  //const uint32_t dummydetid = 0xffffffff;
+  //debug = edm::MessageDrop::instance()->debugEnabled;
 
-// initialize cabling map or update if necessary
+  // initialize cabling map or update if necessary
   if (recordWatcher.check( es )) {
     // cabling map, which maps online address (fed->link->ROC->local pixel) to offline (DetId->global pixel)
     edm::ESTransientHandle<SiPixelFedCablingMap> cablingMap;
     es.get<SiPixelFedCablingMapRcd>().get( cablingMapLabel, cablingMap ); //Tav
     fedIds   = cablingMap->fedIds();
-    cabling_ = cablingMap->cablingTree();
-    LogDebug("map version:")<< cabling_->version();
+    // cabling_ = cablingMap->cablingTree();
+    // LogDebug("map version:")<< cabling_->version();
   }
-// initialize quality record or update if necessary
+
+/*  // initialize quality record or update if necessary
   if (qualityWatcher.check( es )&&useQuality) {
     // quality info for dead pixel modules or ROCs
     edm::ESHandle<SiPixelQuality> qualityInfo;
@@ -183,12 +235,12 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
     if (!badPixelInfo_) {
       edm::LogError("SiPixelQualityNotPresent")<<" Configured to use SiPixelQuality, but SiPixelQuality not present"<<endl;
     }
-  }
+  }*/
 
   edm::Handle<FEDRawDataCollection> buffers;
   ev.getByToken(tFEDRawDataCollection, buffers);
 
-// create product (digis & errors)
+  /*// create product (digis & errors)
   auto collection = std::make_unique<edm::DetSetVector<PixelDigi>>();
   // collection->reserve(8*1024);
   auto errorcollection = std::make_unique<edm::DetSetVector<SiPixelRawDataError>>();
@@ -212,19 +264,43 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
     formatter.setModulesToUnpack(regions_->modulesToUnpack());
     LogDebug("SiPixelRawToDigi") << "region2unpack #feds: "<<regions_->nFEDs();
     LogDebug("SiPixelRawToDigi") << "region2unpack #modules (BPIX,EPIX,total): "<<regions_->nBarrelModules()<<" "<<regions_->nForwardModules()<<" "<<regions_->nModules();
-  }
-
+  }*/
+  // GPU specific: Data extraction for RawToDigi GPU
+  static unsigned int wordCounterGPU =0;
+  unsigned int fedCounter = 0;
+  const unsigned int MAX_FED = 150;
+  static int eventCount = 0;
+  bool errorsInEvent = false;
+  
+  ErrorChecker errorcheck;
   for (auto aFed = fedIds.begin(); aFed != fedIds.end(); ++aFed) {
     int fedId = *aFed;
+   
+    // for GPU
+    // first 150 index stores the fedId and next 150 will store the
+    // start index of word in that fed
+    fedIndex[2*MAX_FED*eventCount+fedCounter] = fedId-1200;
+    fedIndex[MAX_FED + 2*MAX_FED*eventCount+fedCounter] = wordCounterGPU; // MAX_FED = 150
+    fedCounter++;
 
-    if(!usePilotBlade && (fedId==40) ) continue; // skip pilot blade data
-
-    if (regions_ && !regions_->mayUnpackFED(fedId)) continue;
-
-    if(debug) LogDebug("SiPixelRawToDigi")<< " PRODUCE DIGI FOR FED: " <<  fedId << endl;
-
+    //get event data for this fed
+    const FEDRawData& rawData = buffers->FEDData( fedId );
+    //GPU specific 
     PixelDataFormatter::Errors errors;
+    int nWords = rawData.size()/sizeof(Word64);
+    if(nWords==0) {
+      word[wordCounterGPU++] =0;
+      continue;
+    }  
 
+    // check CRC bit
+    const Word64* trailer = reinterpret_cast<const Word64* >(rawData.data())+(nWords-1);  
+    if(!errorcheck.checkCRC(errorsInEvent, fedId, trailer, errors)) {
+      word[wordCounterGPU++] =0;
+      continue;
+    }
+
+<<<<<<< HEAD
     //get event data for this fed
     const FEDRawData& fedRawData = buffers->FEDData( fedId );
 
@@ -297,24 +373,55 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
       } // loop on errors in event for this FED
     } // if errors to be included in the event
   } // loop on FED data to be unpacked
+=======
+    // check headers
+    const Word64* header = reinterpret_cast<const Word64* >(rawData.data()); header--;
+    bool moreHeaders = true;
+    while (moreHeaders) {
+      header++;
+      //LogTrace("")<<"HEADER:  " <<  print(*header);
+      bool headerStatus = errorcheck.checkHeader(errorsInEvent, fedId, header, errors);
+      moreHeaders = headerStatus;
+    }
+>>>>>>> checkout RawToDigi part from GPU_RawToCPE package and add memory transfer
 
-  if(includeErrors) {
-    edm::DetSet<SiPixelRawDataError>& errorDetSet = errorcollection->find_or_insert(dummydetid);
-    errorDetSet.data = nodeterrors;
+    // check trailers
+    bool moreTrailers = true;
+    trailer++;
+    while (moreTrailers) {
+      trailer--;
+      //LogTrace("")<<"TRAILER: " <<  print(*trailer);
+      bool trailerStatus = errorcheck.checkTrailer(errorsInEvent, fedId, nWords, trailer, errors);
+      moreTrailers = trailerStatus;
+    }
+
+    const  Word32 * bw =(const  Word32 *)(header+1);
+    const  Word32 * ew =(const  Word32 *)(trailer);
+    if ( *(ew-1) == 0 ) { ew--; }
+    for (auto ww = bw; ww < ew; ++ww) {
+      word[wordCounterGPU++] = *ww;
+    }
+  }  // end of for loop
+  
+ 
+
+  // GPU specific: RawToDigi -> clustering -> CPE
+  eventCount++;
+  eventIndex[eventCount] = wordCounterGPU;
+  static int ec=1;
+  cout<<"Data read for event: "<<ec++<<endl;
+  if(eventCount==NEVENT) {
+    RawToDigi_wrapper(wordCounterGPU, word, fedCounter,fedIndex, eventIndex);
+    wordCounterGPU =  0;
+    eventCount=0;
   }
-  if (errorsInEvent) LogDebug("SiPixelRawToDigi") << "Error words were stored in this event";
+  fedCounter =0;
+} // end of produce function
 
-  if (theTimer) {
-    theTimer->stop();
-    LogDebug("SiPixelRawToDigi") << "TIMING IS: (real)" << theTimer->realTime() ;
-    ndigis += formatter.nDigis();
-    nwords += formatter.nWords();
-    LogDebug("SiPixelRawToDigi") << " (Words/Digis) this ev: "
-         <<formatter.nWords()<<"/"<<formatter.nDigis() << "--- all :"<<nwords<<"/"<<ndigis;
-    hCPU->Fill( theTimer->realTime() ); 
-    hDigi->Fill(formatter.nDigis());
-  }
+//define as runnable module
+DEFINE_FWK_MODULE(SiPixelRawToDigi);
 
+<<<<<<< HEAD
   //send digis and errors back to framework 
   ev.put(std::move(collection));
   if(includeErrors){
@@ -324,3 +431,5 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
     ev.put(std::move(disabled_channelcollection));
   }
 }
+=======
+>>>>>>> checkout RawToDigi part from GPU_RawToCPE package and add memory transfer

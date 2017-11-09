@@ -35,8 +35,13 @@ public:
   static void fillDescriptions(edm::ConfigurationDescriptions& descriptions);
 
   /// get data, convert to digis attach againe to Event
+<<<<<<< HEAD
   void produce( edm::Event&, const edm::EventSetup& ) override;
 
+=======
+  virtual void produce( edm::Event&, const edm::EventSetup& ) override;
+  
+>>>>>>> checkout RawToDigi part from GPU_RawToCPE package and add memory transfer
 private:
 
   edm::ParameterSet config_;
@@ -61,5 +66,12 @@ private:
   bool usePilotBlade;
   bool usePhase1;
   std::string cablingMapLabel;
+  typedef cms_uint32_t Word32;
+  typedef cms_uint64_t Word64;
+
+  unsigned int *word;        // to hold input for rawtodigi on GPU
+  unsigned int *fedIndex;    // to hold fed index inside word[] array for rawtodigi on GPU
+  unsigned int *eventIndex;  // to store staring index of each event in word[] array
+  
 };
 #endif
