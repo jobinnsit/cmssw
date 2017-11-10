@@ -109,7 +109,6 @@ private:
   int maxROCIndex;
   bool phase1;
 
-
   int checkError(const Word32& data) const;
 
   int digi2word(  cms_uint32_t detId, const PixelDigi& digi,
