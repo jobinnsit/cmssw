@@ -34,8 +34,12 @@ public:
 
   static void fillDescriptions(edm::ConfigurationDescriptions& descriptions);
 
+  // genrate the cabling map for GPU RawToDigi
+  void generateCablingMapGPU(const std::string file);
+
   /// get data, convert to digis attach againe to Event
   void produce( edm::Event&, const edm::EventSetup& ) override;
+
 
 private:
 
@@ -61,5 +65,33 @@ private:
   bool usePilotBlade;
   bool usePhase1;
   std::string cablingMapLabel;
+  bool cablingMapGPU;
+
+  class Key {
+    public:
+      Key(unsigned int _fed, unsigned int _link, unsigned int _roc): 
+      fed(_fed), link(_link), roc(_roc) {}
+      //bool operator < (const Key & other) const;
+      bool operator < (const Key & other) const {
+        if (this->fed < other.fed) return true;
+        if (this->fed > other.fed) return false;
+        if (this->link < other.link) return true;
+        if (this->link > other.link) return false;
+        if (this->roc < other.roc) return true;
+        if (this->roc > other.roc) return false; 
+        return false;
+      }    
+    private:
+      unsigned int fed;
+      unsigned int link;
+      unsigned int roc;
+  };
+  struct DetId {
+    unsigned int RawId;
+    unsigned int idinDU;
+    unsigned int ModuleId;
+    DetId(unsigned int _RawId,unsigned int _idinDU, unsigned int _ModuleId): 
+    RawId(_RawId), idinDU(_idinDU), ModuleId(_ModuleId) {}
+  };
 };
 #endif

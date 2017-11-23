@@ -6,6 +6,14 @@
 // Jan 2016 Tamas Almos Vami (Tav) (Wigner RCP) -- Cabling Map label option
 // Jul 2017 Viktor Veszpremi -- added PixelFEDChannel
 
+#include <string>
+#include <vector>
+#include <iterator>
+#include <fstream>
+#include <boost/lexical_cast.hpp>
+#include <iostream>
+#include <map>
+
 #include "SiPixelRawToDigi.h"
 
 #include "DataFormats/Common/interface/Handle.h"
@@ -38,6 +46,7 @@
 
 #include "TH1D.h"
 #include "TFile.h"
+
 
 using namespace std;
 
@@ -104,6 +113,9 @@ SiPixelRawToDigi::SiPixelRawToDigi( const edm::ParameterSet& conf )
   //CablingMap could have a label //Tav
   cablingMapLabel = config_.getParameter<std::string> ("CablingMapLabel");
 
+  // to generate cabling map required for gpu raw to digi,can be moved in config file
+  cablingMapGPU = true;
+
 }
 
 
@@ -157,6 +169,165 @@ SiPixelRawToDigi::fillDescriptions(edm::ConfigurationDescriptions& descriptions)
 
 // -----------------------------------------------------------------------------
 
+void SiPixelRawToDigi::generateCablingMapGPU(const string file) {
+  typedef std::map<SiPixelRawToDigi::Key,DetId> MAP;
+  MAP theMap;
+  std::map<SiPixelRawToDigi::Key,DetId>::iterator it2;
+
+  const string FED = "FED:";
+  const string LNK = "LNK:";
+  const string ROCs = "ROCs:";
+  const string BARREL = "barrel";
+  const string ENDCAP = "endcap";
+  const string header = " FedID    LINK  idinLNK   B_F      Rawid     idinDU";
+  char  buffer[1024];
+
+  string buf; // Have a buffer string
+  string fedstr,    lnkstr;
+  string idinLNK_str, BigId_str, idinDU_str;
+  int    idinLNK, idinDU;
+
+  int PixRawID[30000];
+  for(int i=0; i<30000; i++){PixRawID[i]=0;}
+
+  //Part 1 of the code
+  ifstream inMap;  inMap.open("Map_Phase1_d4.txt");
+  ofstream outMap; outMap.open("FED_Map_Phase1.dat");
+  outMap << header << endl;
+
+  int FedRawIdx=0;
+  while(!inMap.eof()) {
+    inMap >> buf;
+    if(buf==FED) {inMap >> fedstr;}
+    if(buf==LNK) {inMap >> lnkstr;}
+    if(buf=="========") {
+      //======== PixelROC  endcap  (344014096) idInDU: 0 idInLk: 1
+      string pixelRoc, type;
+      inMap >> pixelRoc >> type >> BigId_str >> idinDU_str >> idinDU >> idinLNK_str >> idinLNK;
+      char temp1[12];
+      strcpy(temp1, BigId_str.c_str());
+      char temp2[12];
+      strcpy(temp2,"ABCDEFGHI");
+      for(int i=1;i<=9;i++) {temp2[i-1]= temp1[i];}
+      string newBigId_str(temp2);
+      int B_F; // B_F = 1 if barrel, B_F =2 if endcap
+      if(type=="endcap") {B_F = 2;}
+      else {B_F = 1;}
+
+      int i1 = boost::lexical_cast<int>(fedstr);
+      int i2 = boost::lexical_cast<int>(lnkstr);
+      int i3 = idinLNK;    int i4 = B_F;
+      int i5=0; sscanf(temp2,"%d", &i5);  //rawid
+      int i6 = idinDU;
+      sprintf(buffer, "  %04d     %02d     %02d       %1d     %9d     %02d \n", i1, i2, i3, i4, i5, i6);
+      outMap << buffer;
+      PixRawID[FedRawIdx] = i5; FedRawIdx++;
+    }
+  }//while(!inMap.eof()) {
+  inMap.close();
+  outMap << endl; outMap.close();
+
+  //Part 2 of the Code
+  sort(PixRawID, PixRawID+FedRawIdx);
+  ofstream outMap2;
+  outMap2.open("RawID_ModuleID_Phase1.dat");
+  const string header2 = "    RawID      ModuleID";
+  outMap2 << header2 << endl;
+  std::map<int, int> Map;
+  std::map<int, int>::iterator it;
+
+  int num_prev=-1; int imod=0;
+  for(int i=0; i<30000; i++){
+    if(num_prev!=PixRawID[i] && PixRawID[i]>0){
+      sprintf(buffer, "  %9d     %04d \n", PixRawID[i], imod);
+      Map.insert(std::pair<int, int>(PixRawID[i], imod));
+      outMap2 << buffer;
+      num_prev=PixRawID[i]; imod++;
+    }
+  }
+  outMap2.close();
+
+  //Part 3 of the Code
+  int FedID, Link, idInLnk, B_F, rawId, idInDU, module;
+  string str, str1="    ModuleID";
+
+  ifstream mapFile;   mapFile.open("FED_Map_Phase1.dat");
+  ofstream mapFile2;  mapFile2.open("FED_Map_With_ModuleID_Phase1.dat");
+
+  getline(mapFile, str);
+  mapFile2 << str+str1 <<endl;
+
+  while(!mapFile.eof()) {
+    mapFile>> FedID >> Link >> idInLnk >> B_F >> rawId >> idInDU;
+    it = Map.find(rawId);
+    if(it !=Map.end()) {module = it->second;}
+    else {module = -999;}
+    int i1=FedID; int i2=Link; int i3=idInLnk;  int i4=B_F; int i5=rawId; int i6=idInDU; int i7=module;
+    sprintf(buffer, "  %04d     %02d     %02d       %1d     %9d     %02d        %04d\n", i1, i2, i3, i4, i5, i6, i7);
+    mapFile2 << buffer;
+  }
+  mapFile.close();  mapFile2.close();
+
+
+  //Part 4 (Final Stage) of the Code
+  ifstream fedFile;
+  fedFile.open("FED_Map_With_ModuleID_Phase1.dat");
+  ofstream  arrayFile;
+  arrayFile.open("Pixel_Phase1_Raw2Digi_GPU_Cabling_Map.dat");
+
+  getline(fedFile, str);
+  unsigned int uFedID,  uLink, uidinLnk,  uRawId, uidinDU, uModuleId;
+  while(!fedFile.eof()){
+    fedFile >> uFedID >> uLink >> uidinLnk >> B_F >> uRawId >> uidinDU >> uModuleId;
+    Key key(uFedID, uLink, uidinLnk);
+    DetId detId(uRawId, uidinDU, uModuleId);
+    theMap.insert(std::pair<Key, DetId>(key,detId));
+  }
+  fedFile.close();
+
+  const string header3 = "  Index      FedID  Link  idinLNK   B_F      RawID     idinDU    ModuleID";
+  arrayFile<< header3 <<endl;
+  int idxF=0;
+  for(unsigned int fed=1200;fed<=1338;fed++) {
+    for(unsigned int link=1;link<=48;link++) {
+      for(unsigned int roc=1;roc<=8;roc++) {
+        idxF++;
+        Key key(fed, link, roc);
+        it2 = theMap.find(key);
+        if(it2 !=theMap.end()) {
+           uRawId = it2->second.RawId;
+           uModuleId = it2->second.ModuleId;
+           uidinDU   = it2->second.idinDU;
+           int b_f=2;                //Forward
+           if(uModuleId<1184)b_f=1;  //Barrel
+           sprintf(buffer, "  %06d     %04d    %02d     %02d       %1d     %9d     %02d        %04d\n", 
+           idxF, fed, link, roc, b_f, uRawId, uidinDU, uModuleId);
+           arrayFile << buffer;
+        }
+        else {
+          //This combination of FED, Link and ROC is not present 
+          //in the cabling map. Therefore, fill with dummy 9999
+          int i1=9999, i2=99, i3=0;
+          sprintf(buffer, "  %06d     %04d    %02d     %02d       %1d     %9d     %02d        %04d\n", 
+          idxF, i1, i2, i2, i3, i1, i2, i1);
+          arrayFile << buffer;
+        }
+      }  //for(unsigned int roc=1;roc<=8;roc++) {
+    }   //for(unsigned int link=1;link<=48;link++) {
+  }    //for(unsigned int fed=1200;fed<=1303;fed++) {
+
+  //Given FedId, Link and idinLnk; use the following formula
+  //to get the RawId and idinDU 
+  //index = (FedID-1200) * MAX_LINK* MAX_ROC + (Link-1)* MAX_ROC + idinLnk;  
+  //where, MAX_LINK = 48, MAX_ROC = 8 for Phase1 as mentioned Danek's email
+  //FedID varies between 1200 to 1338 (In total 108 FED's)
+  //Link varies between 1 to 48
+  //idinLnk varies between 1 to 8
+
+  cout << "Cabling map for GPU generated Succesfully!" << endl;
+  arrayFile.close();
+}
+
 
 // -----------------------------------------------------------------------------
 void SiPixelRawToDigi::produce( edm::Event& ev,
@@ -173,6 +344,13 @@ void SiPixelRawToDigi::produce( edm::Event& ev,
     fedIds   = cablingMap->fedIds();
     cabling_ = cablingMap->cablingTree();
     LogDebug("map version:")<< cabling_->version();
+    if(cablingMapGPU) {
+      const string file = "Map_Phase1_d4.txt";
+      ofstream ofile(file);
+      ofile << cabling_->print(4); // print(depth), depth = 4 prints feds, links, roc
+      ofile.close();
+      generateCablingMapGPU(file);
+    }
   }
 // initialize quality record or update if necessary
   if (qualityWatcher.check( es )&&useQuality) {
