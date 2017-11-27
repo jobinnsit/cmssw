@@ -35,13 +35,8 @@ public:
   static void fillDescriptions(edm::ConfigurationDescriptions& descriptions);
 
   /// get data, convert to digis attach againe to Event
-<<<<<<< HEAD
   void produce( edm::Event&, const edm::EventSetup& ) override;
 
-=======
-  virtual void produce( edm::Event&, const edm::EventSetup& ) override;
-  
->>>>>>> checkout RawToDigi part from GPU_RawToCPE package and add memory transfer
 private:
 
   edm::ParameterSet config_;
