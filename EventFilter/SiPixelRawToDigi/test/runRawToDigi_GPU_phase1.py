@@ -56,14 +56,14 @@ fileNames =  cms.untracked.vstring(
 #file=/store/relval/CMSSW_8_1_0/RelValMinBias_13/GEN-SIM-DIGI-RAW/81X_upgrade2017_realistic_v26_HLT2017Trk-v1/10000/06A2997E-3BC1-E611-B286-0CC47A78A30E.root
 
 
-process.load("EventFilter.SiPixelRawToDigi.SiPixelRawToDigi_cfi")
+process.load("EventFilter.SiPixelRawToDigi.SiPixelRawToDigiGPU_cfi")
 
 process.siPixelDigis.InputLabel = 'rawDataCollector'
 process.siPixelDigis.IncludeErrors = False #True
 process.siPixelDigis.Timing = False 
 process.siPixelDigis.UsePhase1 = cms.bool(True)
 # do the calibration ADC -> Electrons as required in clustering and apply the channel threshold
-process.siPixelDigis.ConvertADCtoElectrons = cms.bool(False)
+#process.siPixelDigis.ConvertADCtoElectrons = cms.bool(False)
 
 process.MessageLogger = cms.Service("MessageLogger",
     #debugModules = cms.untracked.vstring('siPixelDigis'),
