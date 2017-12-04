@@ -167,7 +167,7 @@ int main(){
   localToGlobal_kernel<<<blocks, threads>>>(N, globalPosRot, xhit_d, yhit_d, hitId_d, Hit);
   storeOutput(N, xhit_h, yhit_h, Hit);
   freeDeviceMemory();
-  cout<<"sizeof float: "<<sizeof(float)<<endl;
+  //cout<<"sizeof float: "<<sizeof(float)<<endl;
   return 0;
 }
 

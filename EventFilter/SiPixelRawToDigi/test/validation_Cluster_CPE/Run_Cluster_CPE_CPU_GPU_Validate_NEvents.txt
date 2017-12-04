@@ -1,6 +1,6 @@
 ****************************************************************************
 *  Instruction to run standalone CPU clustering & CPE code and GPU version
-*  of CMSSW clustering & CPE
+*  of CMSSW clustering & CPE & localToGlobal cordinate conversion
 * 
 *  Input dataset:/store/relval/CMSSW_9_2_0/RelValTTbar_13/GEN-SIM-DIGI-RAW/PU25ns_91X_upgrade2017_realistic_v5_PU50-v1/10000/
 *  
@@ -31,6 +31,17 @@
 *  Part B2: Validate CPU vs GPU Output 
 *  Input  : CPE_CPU.txt, CPE_GPU.txt
 *  Output : Displayed on the screen
+* 
+*
+*  C. For local to global hits
+*
+*  Part C1: Generate the output for the validation
+*  Input: CPE_GPU.txt
+*  Output: GlobalHit_GPU_standalone.txt, GlobalHit_CPU_standalone.txt 
+*
+*  Part C2: validate CPU vs GPU local to global hits output
+*  Input: GlobalHit_GPU_standalone.txt, GlobalHit_CPU_standalone.txt
+*  Output: Displayed on the screen
 *
 ********************************************************************
 
@@ -113,4 +124,31 @@ Part B2: Validate CPU vs GPU CPE output
 
 2. See the output on the screen
 
+*********************************************************
+
+Part C1: Generate the output for the validation (assuming you are in ~/test directory)
+
+1. Copy the input file to the validation directory
+   > cp -p CPE_GPU  validation_localToGlobal
+
+2. Compile GPU and CPU code gor local to global conversion
+   (for nvcc set the path) 
+   > export LD_LIBRARY_PATH=/usr/local/cuda/lib:$LD_LIBRARY_PATH
+   > export PATH=/usr/local/cuda/bin:$PATH
+   
+   > nvcc -std=c++11  LocalToGlobal.cu   
+   > ./a.out
+   > g++ -std=c++11 LocalToGlobal.cpp
+
+
+3. Output:  GlobalHit_CPU_standalone.txt, GlobalHit_GPU_standalone.txt 
+
+Part C2:  validate CPU vs GPU local to global hits output
+
+1. Compile and run the validation code
+
+   > g++ -std=c++11 -O2  validate_localToGlobal_CPU_GPU.cpp
+   > ./a.out
+
+2. Output: See the message on the screen    
 Cheers!!
